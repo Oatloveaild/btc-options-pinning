@@ -10,6 +10,13 @@ from src.config import BASE_DIR, BKK_TZ
 from src.db import get_db, init_db
 from src.events import add_custom_event, delete_event, fetch_forexfactory_events, get_events
 from src.scheduler import init_scheduler, trigger_manual
+from src.settlement_analytics import (
+    analyze_news_sentiment,
+    analyze_pinning_and_gex_flow,
+    compute_settlement_flow_stats,
+    get_expiry_evolution_milestones,
+    get_full_settlement_history,
+)
 
 app = FastAPI(title="BTC Options Pinning Dashboard", description="Deribit BTC Options Pinning & Statistics")
 
@@ -86,6 +93,27 @@ def api_delete_event(event_id: int):
 def api_refresh_forex():
     evs = fetch_forexfactory_events()
     return {"status": "success", "count": len(evs)}
+
+
+@app.get("/api/settlement/detail/{expiry_date}")
+def api_settlement_detail(expiry_date: str):
+    """Returns detailed historical milestones, pinning flow, GEX sweep status, and news sentiment for an expiry."""
+    with get_db() as conn:
+        cur = conn.execute("SELECT * FROM expiry_results WHERE expiry_date = ?", (expiry_date,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Expiry result for {expiry_date} not found")
+        result = dict(row)
+        milestones = get_expiry_evolution_milestones(expiry_date, conn)
+        news = analyze_news_sentiment(expiry_date, conn)
+        flow = analyze_pinning_and_gex_flow(result, milestones, news)
+        return {
+            "expiry_date": expiry_date,
+            "result": result,
+            "milestones_info": milestones,
+            "news_info": news,
+            "flow_info": flow,
+        }
 
 
 def is_expiry_active(exp_date_str: str) -> bool:
@@ -416,9 +444,8 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
         )
         big_expiries = [dict(r) for r in cur_big.fetchall()]
 
-        # 3. Settlement Results
-        cur_res = conn.execute("SELECT * FROM expiry_results WHERE settlement_price IS NOT NULL ORDER BY expiry_date DESC")
-        all_results = [dict(r) for r in cur_res.fetchall()]
+        # 3. Settlement Results with Evolution & GEX Flow Analytics
+        all_results = get_full_settlement_history(conn)
 
         # 4. Events & Logs
         cur_ev = conn.execute("SELECT * FROM events ORDER BY date DESC, time_bkk DESC LIMIT 20")
@@ -652,23 +679,9 @@ def page_results(
     expiry_type: Optional[str] = Query(None),
     event_filter: Optional[str] = Query(None),
 ):
-    query = "SELECT * FROM expiry_results WHERE 1=1"
-    params = []
-
-    if expiry_type and expiry_type != "all":
-        query += " AND expiry_type = ?"
-        params.append(expiry_type)
-
-    if event_filter == "with_event":
-        query += " AND has_high_impact_event = 1"
-    elif event_filter == "without_event":
-        query += " AND (has_high_impact_event = 0 OR has_high_impact_event IS NULL)"
-
-    query += " ORDER BY expiry_date DESC"
-
     with get_db() as conn:
-        cursor = conn.execute(query, params)
-        results = [dict(r) for r in cursor.fetchall()]
+        results = get_full_settlement_history(conn, expiry_type=expiry_type, event_filter=event_filter)
+        flow_stats = compute_settlement_flow_stats(results)
 
     return templates.TemplateResponse(
         request=request,
@@ -676,6 +689,7 @@ def page_results(
         context={
             "page": "results",
             "results": results,
+            "flow_stats": flow_stats,
             "expiry_type": expiry_type or "all",
             "event_filter": event_filter or "all",
         },
