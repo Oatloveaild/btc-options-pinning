@@ -1,166 +1,573 @@
 {% extends "base.html" %}
 
-{% block title %}ผล Settle (Results) - BTC Options Pinning{% endblock %}
+{% block title %}ผล Settle และการไหลของราคา (Settlement & GEX Flow) - BTC Options Pinning{% endblock %}
 
 {% block content %}
-<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
-  <div>
-    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-      <span>🏆 ผล Settle แต่ละ Expiry (Historical Results)</span>
-    </h1>
-    <div class="text-xs text-slate-400 mt-1">
-      ตรวจสอบว่าราคา Settle วิ่งเข้าหาจุด Pinning (Max Pain, Top OI, P1–C1, Gamma Flip) หรือไม่
+<div class="space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-3">
+    <div>
+      <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+        <span>🏆 ผล Settle & วิเคราะห์การไหลของราคา (Pinning & GEX Flow)</span>
+      </h1>
+      <div class="text-xs text-slate-400 mt-1">
+        ติดตามราคา Spot, Max Pain, Top OI, GEX Walls ย้อนหลังตั้งแต่จุดเริ่มเก็บ / 1 เดือน / 1 สัปดาห์ / 24 ชม. ก่อนหน้า เพื่อพิสูจน์การไหลเข้า Pinning และ Sweep GEX
+      </div>
+    </div>
+
+    <!-- Filters & Export -->
+    <div class="flex flex-wrap items-center gap-2">
+      <form method="get" action="/results" class="flex items-center gap-2">
+        <select name="expiry_type" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500">
+          <option value="all" {% if expiry_type == 'all' %}selected{% endif %}>ทุกประเภท Expiry</option>
+          <option value="daily" {% if expiry_type == 'daily' %}selected{% endif %}>Daily</option>
+          <option value="weekly" {% if expiry_type == 'weekly' %}selected{% endif %}>Weekly</option>
+          <option value="monthly" {% if expiry_type == 'monthly' %}selected{% endif %}>Monthly</option>
+          <option value="quarterly" {% if expiry_type == 'quarterly' %}selected{% endif %}>Quarterly</option>
+        </select>
+
+        <select name="event_filter" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500">
+          <option value="all" {% if event_filter == 'all' %}selected{% endif %}>ทุกวัน (มี/ไม่มี Event)</option>
+          <option value="with_event" {% if event_filter == 'with_event' %}selected{% endif %}>เฉพาะวันที่มี High-Impact Event</option>
+          <option value="without_event" {% if event_filter == 'without_event' %}selected{% endif %}>เฉพาะวันที่ไม่มี High-Impact Event</option>
+        </select>
+      </form>
+
+      <a href="/export/results.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-darkborder transition flex items-center gap-1.5">
+        <span>📥 Export Results CSV</span>
+      </a>
     </div>
   </div>
 
-  <!-- Filters & Export -->
-  <div class="flex flex-wrap items-center gap-2">
-    <form method="get" action="/results" class="flex items-center gap-2">
-      <select name="expiry_type" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500">
-        <option value="all" {% if expiry_type == 'all' %}selected{% endif %}>ทุกประเภท Expiry</option>
-        <option value="daily" {% if expiry_type == 'daily' %}selected{% endif %}>Daily</option>
-        <option value="weekly" {% if expiry_type == 'weekly' %}selected{% endif %}>Weekly</option>
-        <option value="monthly" {% if expiry_type == 'monthly' %}selected{% endif %}>Monthly</option>
-        <option value="quarterly" {% if expiry_type == 'quarterly' %}selected{% endif %}>Quarterly</option>
-      </select>
+  <!-- KPI Summary Cards (สถิติรวมการไหลเข้า Pinning & GEX Sweep) -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+    <!-- Card 1: Pinning Flow In -->
+    <div class="bg-darkcard border border-darkborder rounded-xl p-3.5 shadow">
+      <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+        <span class="font-medium">🎯 ไหลเข้าหา Max Pain</span>
+        <span class="text-emerald-400 text-[10px] font-bold">MAGNET PULL</span>
+      </div>
+      <div class="text-2xl font-bold text-white">
+        {{ flow_stats.flow_in_rate or 0 }}%
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">
+        ราคาดึงดูดเข้าหา Max Pain ในวัน Settle (<span class="text-emerald-300 font-semibold">{{ flow_stats.flow_in_count or 0 }}</span> จาก {{ flow_stats.n_mp or 0 }} วัน)
+      </div>
+    </div>
 
-      <select name="event_filter" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500">
-        <option value="all" {% if event_filter == 'all' %}selected{% endif %}>ทุกวัน (มี/ไม่มี Event)</option>
-        <option value="with_event" {% if event_filter == 'with_event' %}selected{% endif %}>เฉพาะวันที่มี High-Impact Event</option>
-        <option value="without_event" {% if event_filter == 'without_event' %}selected{% endif %}>เฉพาะวันที่ไม่มี High-Impact Event</option>
-      </select>
-    </form>
+    <!-- Card 2: Pinning Zone Accuracy -->
+    <div class="bg-darkcard border border-darkborder rounded-xl p-3.5 shadow">
+      <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+        <span class="font-medium">🏆 ความแม่นยำ Pinning</span>
+        <span class="text-teal-400 text-[10px] font-bold">HIT RATE</span>
+      </div>
+      <div class="text-2xl font-bold text-white flex items-baseline gap-2">
+        <span>{{ flow_stats.zone_pin_rate or 0 }}%</span>
+        <span class="text-xs font-normal text-emerald-400">±1.0%</span>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">
+        แม่นยำสูง ±0.5%: <span class="text-emerald-300 font-semibold">{{ flow_stats.exact_pin_rate or 0 }}%</span> (เฉลี่ยห่าง {{ flow_stats.avg_dist_mp or 0 }}%)
+      </div>
+    </div>
 
-    <a href="/export/results.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
-      📥 Export Results CSV
-    </a>
+    <!-- Card 3: GEX Range Containment -->
+    <div class="bg-darkcard border border-darkborder rounded-xl p-3.5 shadow">
+      <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+        <span class="font-medium">🛡️ กักอยู่ในกรอบ GEX</span>
+        <span class="text-blue-400 text-[10px] font-bold">CONTAINED</span>
+      </div>
+      <div class="text-2xl font-bold text-white">
+        {{ flow_stats.contained_rate or 0 }}%
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1">
+        Settle ภายในกรอบ Put 1 ถึง Call 1 (<span class="text-blue-300 font-semibold">{{ flow_stats.contained_count or 0 }}</span> จาก {{ flow_stats.total or 0 }} ครั้ง)
+      </div>
+    </div>
+
+    <!-- Card 4: GEX Sweep Rate -->
+    <div class="bg-darkcard border border-darkborder rounded-xl p-3.5 shadow">
+      <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+        <span class="font-medium">⚡ สถิติ Sweep GEX</span>
+        <span class="text-amber-400 text-[10px] font-bold">BREAKOUT</span>
+      </div>
+      <div class="text-base font-bold text-white flex items-center justify-between mt-1">
+        <div class="text-xs">
+          <span class="text-emerald-400">🐂 Call Sweep:</span> {{ flow_stats.call_sweep_rate or 0 }}%
+        </div>
+        <div class="text-xs">
+          <span class="text-rose-400">🐻 Put Sweep:</span> {{ flow_stats.put_sweep_rate or 0 }}%
+        </div>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-1.5">
+        Top OI Hit Rate (±1%): <span class="text-cyan-300 font-semibold">{{ flow_stats.top_oi_rate or 0 }}%</span>
+      </div>
+    </div>
   </div>
+
+  <!-- Results Table Card -->
+  <div class="bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs text-left text-slate-300">
+        <thead class="text-slate-400 bg-slate-800/80 uppercase">
+          <tr>
+            <th class="px-3 py-2.5">Expiry Date</th>
+            <th class="px-3 py-2.5">ประเภท</th>
+            <th class="px-3 py-2.5">Settle Price ($)</th>
+            <th class="px-3 py-2.5">การไหล (Flow)</th>
+            <th class="px-3 py-2.5">ความแม่นยำ Pin</th>
+            <th class="px-3 py-2.5">สถานะ GEX</th>
+            <th class="px-3 py-2.5">Max Pain ($)</th>
+            <th class="px-3 py-2.5">Top OI ($)</th>
+            <th class="px-3 py-2.5">กรอบ P1–C1 ($)</th>
+            <th class="px-3 py-2.5">ข่าว & ทิศทาง</th>
+            <th class="px-3 py-2.5 text-right">เจาะลึกการไหล</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-darkborder/50">
+          {% for r in results %}
+          <tr class="hover:bg-slate-800/40 transition">
+            <!-- Date -->
+            <td class="px-3 py-2.5 font-bold text-white whitespace-nowrap">
+              {{ r.expiry_date }}
+            </td>
+
+            <!-- Type -->
+            <td class="px-3 py-2.5">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold {% if r.expiry_type == 'weekly' %}bg-blue-500/20 text-blue-400{% elif r.expiry_type == 'monthly' or r.expiry_type == 'quarterly' %}bg-purple-500/20 text-purple-400{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {{ r.expiry_type or "daily" }}
+              </span>
+            </td>
+
+            <!-- Settle Price -->
+            <td class="px-3 py-2.5 font-bold text-white whitespace-nowrap">
+              ${{ "{:,.2f}".format(r.settlement_price) }}
+            </td>
+
+            <!-- Flow Dynamic -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              {% if r.flow_info %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.flow_badge_class }}">
+                  {{ r.flow_info.flow_label }}
+                </span>
+              {% else %}
+                <span class="text-slate-500">-</span>
+              {% endif %}
+            </td>
+
+            <!-- Pinning Accuracy -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              {% if r.flow_info %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.pin_badge_class }}">
+                  {{ r.flow_info.pin_badge }}
+                </span>
+              {% else %}
+                <span class="text-slate-500">-</span>
+              {% endif %}
+            </td>
+
+            <!-- GEX Status -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              {% if r.flow_info %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.gex_class }}">
+                  {{ r.flow_info.gex_label }}
+                </span>
+              {% else %}
+                <span class="text-slate-500">-</span>
+              {% endif %}
+            </td>
+
+            <!-- Max Pain -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              <div class="text-amber-400 font-semibold">
+                {{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}
+              </div>
+              <div class="text-[10px] {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-slate-400{% endif %}">
+                {{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }}
+              </div>
+            </td>
+
+            <!-- Top OI -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              <div class="text-cyan-400">
+                {{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}
+              </div>
+              <div class="text-[10px] text-slate-400">
+                {{ "{:+.2f}%".format(r.dist_top_oi_pct) if r.dist_top_oi_pct is not none else "-" }}
+              </div>
+            </td>
+
+            <!-- Range P1-C1 -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              {% if r.range_low and r.range_high %}
+                <div class="text-slate-300">
+                  ${{ "{:,.0f}".format(r.range_low) }}–${{ "{:,.0f}".format(r.range_high) }}
+                </div>
+                <div class="text-[10px] text-slate-500">
+                  กว้าง {{ "{:.1f}%".format(r.range_width_pct) }}
+                </div>
+              {% else %}
+                <span class="text-slate-500">-</span>
+              {% endif %}
+            </td>
+
+            <!-- News & Sentiment -->
+            <td class="px-3 py-2.5 whitespace-nowrap">
+              {% if r.news_info %}
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold border {{ r.news_info.sentiment_class }}">
+                  {{ r.news_info.sentiment_badge }}
+                </span>
+                <span class="text-[10px] text-slate-400 ml-1">
+                  ({{ r.news_info.events|length }} ข่าว)
+                </span>
+              {% else %}
+                <span class="text-slate-500">-</span>
+              {% endif %}
+            </td>
+
+            <!-- Action Button: Open Detail Modal -->
+            <td class="px-3 py-2.5 text-right whitespace-nowrap">
+              <button onclick="openEvolutionModal('{{ r.expiry_date }}')" class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
+                <span>🔍 เจาะลึกการไหล</span>
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
-<!-- Results Table -->
-<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
-  <div class="overflow-x-auto">
-    <table class="w-full text-xs text-left text-slate-300">
-      <thead class="text-slate-400 bg-slate-800/80 uppercase">
-        <tr>
-          <th class="px-3 py-2.5">Expiry Date</th>
-          <th class="px-3 py-2.5">ประเภท</th>
-          <th class="px-3 py-2.5">Settle Price ($)</th>
-          <th class="px-3 py-2.5">Snapshot ที่ใช้</th>
-          <th class="px-3 py-2.5">Max Pain ($)</th>
-          <th class="px-3 py-2.5">ห่าง MP (%)</th>
-          <th class="px-3 py-2.5">Pin ±0.5% / ±1%</th>
-          <th class="px-3 py-2.5">Top OI ($)</th>
-          <th class="px-3 py-2.5">ห่าง Top (%)</th>
-          <th class="px-3 py-2.5">กรอบ P1–C1 ($)</th>
-          <th class="px-3 py-2.5">ในกรอบ?</th>
-          <th class="px-3 py-2.5">Gamma Flip</th>
-          <th class="px-3 py-2.5">High Event</th>
-          <th class="px-3 py-2.5 text-right">กราฟย้อนหลัง</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-darkborder/50">
-        {% for r in results %}
-        <tr class="hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-bold text-white">{{ r.expiry_date }}</td>
-          <td class="px-3 py-2">
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold {% if r.expiry_type == 'weekly' %}bg-blue-500/20 text-blue-400{% elif r.expiry_type == 'monthly' or r.expiry_type == 'quarterly' %}bg-purple-500/20 text-purple-400{% else %}bg-slate-700 text-slate-300{% endif %}">
-              {{ r.expiry_type or "daily" }}
+<!-- ====================================================================== -->
+<!-- EVOLUTION & FLOW DETAIL MODAL FOR EACH EXPIRY -->
+<!-- ====================================================================== -->
+{% for r in results %}
+<div id="modal-{{ r.expiry_date }}" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+  <div class="bg-darkcard border border-darkborder rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col text-slate-200">
+
+    <!-- Modal Header -->
+    <div class="sticky top-0 bg-darkcard/95 backdrop-blur border-b border-darkborder p-4 flex items-center justify-between z-10">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-base sm:text-lg font-bold text-white">
+            📅 วิเคราะห์การไหลของราคา Expiry: {{ r.expiry_date }}
+          </span>
+          <span class="px-2 py-0.5 rounded text-xs font-semibold {% if r.expiry_type == 'weekly' %}bg-blue-500/20 text-blue-400{% elif r.expiry_type == 'monthly' or r.expiry_type == 'quarterly' %}bg-purple-500/20 text-purple-400{% else %}bg-slate-700 text-slate-300{% endif %}">
+            {{ r.expiry_type or "daily" }}
+          </span>
+          <span class="text-xs text-slate-400 font-mono">
+            Settle: <strong class="text-white">${{ "{:,.2f}".format(r.settlement_price) }}</strong>
+          </span>
+        </div>
+        <div class="text-xs text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.flow_badge_class }}">
+            {{ r.flow_info.flow_label }}
+          </span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.pin_badge_class }}">
+            {{ r.flow_info.pin_badge }}
+          </span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.gex_class }}">
+            {{ r.flow_info.gex_label }}
+          </span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border {{ r.news_info.sentiment_class }}">
+            {{ r.news_info.sentiment_badge }}
+          </span>
+        </div>
+      </div>
+
+      <button onclick="closeEvolutionModal('{{ r.expiry_date }}')" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+        ✕
+      </button>
+    </div>
+
+    <!-- Modal Content -->
+    <div class="p-4 sm:p-6 space-y-6">
+
+      <!-- SECTION 1: TIMELINE EVOLUTION TABLE -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
+            <span>🕒 ไทม์ไลน์เปรียบเทียบการเปลี่ยนแปลง (Evolution Milestones)</span>
+          </h3>
+          <span class="text-[11px] text-slate-400">
+            ย้อนหลังจากจุดเริ่มเก็บ / 1 เดือน / 1 สัปดาห์ / 24 ชม. เทียบกับวัน Settle
+          </span>
+        </div>
+
+        <div class="border border-darkborder rounded-xl overflow-x-auto bg-slate-900/60">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-800/80 text-slate-400 uppercase text-[10px]">
+              <tr>
+                <th class="px-3 py-2">จุดเวลา (Milestone)</th>
+                <th class="px-3 py-2">วันเวลา (BKK)</th>
+                <th class="px-3 py-2">Spot Price ($)</th>
+                <th class="px-3 py-2">Max Pain ($)</th>
+                <th class="px-3 py-2">Top OI ($)</th>
+                <th class="px-3 py-2">Call Wall C1 ($)</th>
+                <th class="px-3 py-2">Put Wall P1 ($)</th>
+                <th class="px-3 py-2">Gamma Flip ($)</th>
+                <th class="px-3 py-2">Net GEX ($)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-darkborder/50">
+              <!-- Historical Milestones -->
+              {% if r.milestones_info and r.milestones_info.milestones %}
+                {% for m in r.milestones_info.milestones %}
+                <tr class="hover:bg-slate-800/30">
+                  <td class="px-3 py-2 font-semibold text-slate-200">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
+                      {{ m.period_tag }}
+                    </span>
+                    <span class="ml-1">{{ m.label }}</span>
+                  </td>
+                  <td class="px-3 py-2 text-slate-400 text-[11px] font-mono">{{ m.time_bkk }}</td>
+                  <td class="px-3 py-2 font-bold text-white">${{ "{:,.2f}".format(m.spot) if m.spot else "-" }}</td>
+                  <td class="px-3 py-2 text-amber-400 font-semibold">{{ "${:,.0f}".format(m.max_pain) if m.max_pain else "-" }}</td>
+                  <td class="px-3 py-2 text-cyan-400">{{ "${:,.0f}".format(m.top_oi) if m.top_oi else "-" }}</td>
+                  <td class="px-3 py-2 text-emerald-400">{{ "${:,.0f}".format(m.call1_strike) if m.call1_strike else "-" }}</td>
+                  <td class="px-3 py-2 text-rose-400">{{ "${:,.0f}".format(m.put1_strike) if m.put1_strike else "-" }}</td>
+                  <td class="px-3 py-2 text-slate-300">{{ "${:,.0f}".format(m.gamma_flip) if m.gamma_flip else "-" }}</td>
+                  <td class="px-3 py-2 font-mono text-[11px] {% if m.net_gex_usd and m.net_gex_usd > 0 %}text-emerald-400{% elif m.net_gex_usd and m.net_gex_usd < 0 %}text-rose-400{% else %}text-slate-400{% endif %}">
+                    {% if m.net_gex_usd %}
+                      ${{ "{:,.0f}".format(m.net_gex_usd) }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="9" class="px-3 py-3 text-center text-slate-500 italic">
+                    ไม่มี Snapshot ย้อนหลังที่บันทึกไว้สำหรับ Expiry นี้
+                  </td>
+                </tr>
+              {% endif %}
+
+              <!-- Final Settlement Result Row -->
+              <tr class="bg-emerald-950/20 border-t-2 border-emerald-500/40 font-bold">
+                <td class="px-3 py-2.5 text-emerald-300 flex items-center gap-1.5">
+                  <span>🏆</span>
+                  <span>วัน Settle (Final)</span>
+                </td>
+                <td class="px-3 py-2.5 text-slate-300 text-[11px] font-mono">15:00 น. BKK</td>
+                <td class="px-3 py-2.5 text-white text-sm">
+                  ${{ "{:,.2f}".format(r.settlement_price) }}
+                </td>
+                <td class="px-3 py-2.5 text-amber-300">
+                  {{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}
+                  <span class="text-[10px] font-normal block {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-rose-400{% endif %}">
+                    ห่าง {{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }}
+                  </span>
+                </td>
+                <td class="px-3 py-2.5 text-cyan-300">
+                  {{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}
+                  <span class="text-[10px] font-normal block text-slate-400">
+                    ห่าง {{ "{:+.2f}%".format(r.dist_top_oi_pct) if r.dist_top_oi_pct is not none else "-" }}
+                  </span>
+                </td>
+                <td class="px-3 py-2.5 text-emerald-300">
+                  {{ "${:,.0f}".format(r.call1_strike) if r.call1_strike else "-" }}
+                  <span class="text-[10px] font-normal block text-slate-400">
+                    ห่าง {{ "{:+.2f}%".format(r.flow_info.dist_c1_pct) if r.flow_info.dist_c1_pct is not none else "-" }}
+                  </span>
+                </td>
+                <td class="px-3 py-2.5 text-rose-300">
+                  {{ "${:,.0f}".format(r.put1_strike) if r.put1_strike else "-" }}
+                  <span class="text-[10px] font-normal block text-slate-400">
+                    ห่าง {{ "{:+.2f}%".format(r.flow_info.dist_p1_pct) if r.flow_info.dist_p1_pct is not none else "-" }}
+                  </span>
+                </td>
+                <td class="px-3 py-2.5 text-slate-300">
+                  {{ "${:,.0f}".format(r.snap_gamma_flip) if r.snap_gamma_flip else "-" }}
+                  <span class="text-[10px] font-normal block text-slate-400">
+                    {{ r.settled_vs_gamma_flip or "-" }}
+                  </span>
+                </td>
+                <td class="px-3 py-2.5 text-xs text-emerald-400 font-mono">
+                  Settle เสร็จสิ้น
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SECTION 2: FLOW & GEX DYNAMICS BREAKDOWN -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Pinning Flow Analysis -->
+        <div class="bg-slate-900/70 border border-darkborder rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>🎯 การวิเคราะห์การไหลเข้า Pinning (Magnet Effect)</span>
+            </h4>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.flow_badge_class }}">
+              {{ r.flow_info.flow_label }}
             </span>
-          </td>
-          <td class="px-3 py-2 font-bold text-white">${{ "{:,.2f}".format(r.settlement_price) }}</td>
-          <td class="px-3 py-2 text-slate-400">
-            {% if r.snapshot_used %}
-              <span class="px-1.5 py-0.5 rounded text-[10px] {% if 'fallback' in r.snapshot_used %}bg-amber-500/20 text-amber-300{% else %}bg-slate-700 text-slate-300{% endif %}">
-                {{ r.snapshot_used }}
+          </div>
+          <p class="text-xs text-slate-300 leading-relaxed mb-3">
+            {{ r.flow_info.flow_desc }}
+          </p>
+          <div class="bg-slate-800/60 rounded-lg p-2.5 text-xs space-y-1.5 border border-darkborder/50 font-mono">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Spot ก่อน Settle (Base):</span>
+              <span class="text-white">${{ "{:,.2f}".format(r.flow_info.spot_base) if r.flow_info.spot_base else "-" }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Max Pain Strike:</span>
+              <span class="text-amber-400">${{ "{:,.0f}".format(r.max_pain) if r.max_pain else "-" }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Settle Final:</span>
+              <span class="text-white">${{ "{:,.2f}".format(r.settlement_price) }}</span>
+            </div>
+            <div class="flex justify-between border-t border-darkborder/60 pt-1">
+              <span class="text-slate-400">ระยะห่างสุทธิจาก Max Pain:</span>
+              <span class="font-bold {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-rose-400{% endif %}">
+                ${{ "{:+,.2f}".format(r.dist_max_pain_usd) if r.dist_max_pain_usd is not none else "-" }} ({{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }})
               </span>
-            {% else %}
-              <span class="text-slate-500 italic">ไม่มี snap</span>
-            {% endif %}
-          </td>
+            </div>
+          </div>
+        </div>
 
-          <!-- Max Pain -->
-          <td class="px-3 py-2 text-amber-400 font-semibold">
-            {{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}
-          </td>
-          <td class="px-3 py-2 font-semibold {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-slate-300{% endif %}">
-            {{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }}
-          </td>
-          <td class="px-3 py-2">
-            {% if r.max_pain %}
-              {% set w05 = r['[within_0.5pct_max_pain]'] or r['within_0.5pct_max_pain'] or 0 %}
-              {% set w1 = r['within_1pct_max_pain'] or 0 %}
-              {% if w05 %}
-                <span class="px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[10px] font-bold">🎯 ±0.5%</span>
-              {% elif w1 %}
-                <span class="px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 text-[10px] font-bold">✓ ±1.0%</span>
-              {% else %}
-                <span class="text-slate-500 text-[11px]">✕</span>
-              {% endif %}
-            {% else %}
-              -
-            {% endif %}
-          </td>
+        <!-- GEX Sweep Analysis -->
+        <div class="bg-slate-900/70 border border-darkborder rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>⚡ พฤติกรรม GEX (Dealer Positioning & Walls)</span>
+            </h4>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.gex_class }}">
+              {{ r.flow_info.gex_label }}
+            </span>
+          </div>
+          <p class="text-xs text-slate-300 leading-relaxed mb-3">
+            {{ r.flow_info.gex_desc }}
+          </p>
+          <div class="bg-slate-800/60 rounded-lg p-2.5 text-xs space-y-1.5 border border-darkborder/50 font-mono">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Call Wall C1:</span>
+              <span class="text-emerald-400">${{ "{:,.0f}".format(r.call1_strike) if r.call1_strike else "-" }} (ห่าง {{ "{:+.2f}%".format(r.flow_info.dist_c1_pct) if r.flow_info.dist_c1_pct is not none else "-" }})</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Put Wall P1:</span>
+              <span class="text-rose-400">${{ "{:,.0f}".format(r.put1_strike) if r.put1_strike else "-" }} (ห่าง {{ "{:+.2f}%".format(r.flow_info.dist_p1_pct) if r.flow_info.dist_p1_pct is not none else "-" }})</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">ความกว้างกรอบ GEX:</span>
+              <span class="text-slate-200">{{ "{:.2f}%".format(r.range_width_pct) if r.range_width_pct else "-" }}</span>
+            </div>
+            <div class="flex justify-between border-t border-darkborder/60 pt-1">
+              <span class="text-slate-400">Top OI Strike:</span>
+              <span class="text-cyan-400">${{ "{:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }} (ห่าง {{ "{:+.2f}%".format(r.dist_top_oi_pct) if r.dist_top_oi_pct is not none else "-" }})</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          <!-- Top OI -->
-          <td class="px-3 py-2 text-cyan-400">
-            {{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}
-          </td>
-          <td class="px-3 py-2">
-            {{ "{:+.2f}%".format(r.dist_top_oi_pct) if r.dist_top_oi_pct is not none else "-" }}
-          </td>
+      <!-- SECTION 3: NEWS & SENTIMENT SUMMARY -->
+      <div class="bg-slate-900/70 border border-darkborder rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+            <span>📰 สรุปข่าวสาร & ทิศทางตลาด (Market Sentiment Correlation)</span>
+          </h4>
+          <span class="px-2.5 py-0.5 rounded text-xs font-bold border {{ r.news_info.sentiment_class }}">
+            {{ r.news_info.sentiment_label }}
+          </span>
+        </div>
+        <p class="text-xs text-slate-300 mb-3 leading-relaxed">
+          {{ r.news_info.summary_th }}
+        </p>
 
-          <!-- Range P1-C1 -->
-          <td class="px-3 py-2 text-slate-400">
-            {% if r.range_low and r.range_high %}
-              ${{ "{:,.0f}".format(r.range_low) }}–${{ "{:,.0f}".format(r.range_high) }}
-              <span class="text-[10px] text-slate-500">({{ "{:.1f}%".format(r.range_width_pct) }})</span>
-            {% else %}
-              -
-            {% endif %}
-          </td>
-          <td class="px-3 py-2">
-            {% if r.settled_in_put1_call1_range is not none %}
-              {% if r.settled_in_put1_call1_range == 1 %}
-                <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">อยู่ในกรอบ</span>
-              {% else %}
-                <span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px]">หลุดกรอบ</span>
-              {% endif %}
-            {% else %}
-              -
-            {% endif %}
-          </td>
+        <!-- Events List Table -->
+        {% if r.news_info and r.news_info.events %}
+        <div class="border border-darkborder/60 rounded-lg overflow-x-auto bg-slate-950/60 max-h-56 overflow-y-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-800/70 text-slate-400 uppercase text-[10px] sticky top-0">
+              <tr>
+                <th class="px-3 py-1.5">วันที่</th>
+                <th class="px-3 py-1.5">เวลา BKK</th>
+                <th class="px-3 py-1.5">เหตุการณ์ / ตัวเลขเศรษฐกิจ</th>
+                <th class="px-3 py-1.5">Impact</th>
+                <th class="px-3 py-1.5">คาดการณ์ / ก่อนหน้า</th>
+                <th class="px-3 py-1.5">ทิศทาง</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-darkborder/40 text-[11px]">
+              {% for ev in r.news_info.events %}
+              <tr class="hover:bg-slate-800/40">
+                <td class="px-3 py-1.5 text-slate-300 font-mono">{{ ev.date }}</td>
+                <td class="px-3 py-1.5 text-slate-400 font-mono">{{ ev.time_bkk }}</td>
+                <td class="px-3 py-1.5 font-medium text-white">{{ ev.event }}</td>
+                <td class="px-3 py-1.5">
+                  <span class="px-1.5 py-0.2 rounded text-[9px] font-bold {% if ev.impact == 'High' %}bg-rose-500/30 text-rose-300{% elif ev.impact == 'Medium' %}bg-amber-500/20 text-amber-300{% else %}bg-slate-700 text-slate-300{% endif %}">
+                    {{ ev.impact }}
+                  </span>
+                </td>
+                <td class="px-3 py-1.5 text-slate-400 font-mono">
+                  {% if ev.forecast or ev.previous %}
+                    {{ ev.forecast or "-" }} / {{ ev.previous or "-" }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="px-3 py-1.5 whitespace-nowrap">
+                  <span class="text-[10px] {% if ev.sentiment == 'bullish' %}text-emerald-400 font-semibold{% elif ev.sentiment == 'bearish' %}text-rose-400 font-semibold{% else %}text-slate-400{% endif %}">
+                    {{ ev.sentiment_tag }}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-xs text-slate-500 italic p-3 text-center border border-dashed border-darkborder rounded-lg">
+          ไม่มีข่าวสารหรือเหตุการณ์สำคัญที่บันทึกไว้ในช่วงเวลานี้
+        </div>
+        {% endif %}
+      </div>
 
-          <!-- Gamma Flip -->
-          <td class="px-3 py-2">
-            {% if r.snap_gamma_flip %}
-              <span class="text-slate-300">${{ "{:,.0f}".format(r.snap_gamma_flip) }}</span>
-              <span class="text-[10px] ml-1 {% if r.settled_vs_gamma_flip == 'above' %}text-emerald-400{% else %}text-rose-400{% endif %}">
-                ({{ r.settled_vs_gamma_flip }})
-              </span>
-            {% else %}
-              <span class="text-slate-500">-</span>
-            {% endif %}
-          </td>
+    </div>
 
-          <!-- High Impact Event -->
-          <td class="px-3 py-2">
-            {% if r.has_high_impact_event == 1 %}
-              <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-300 font-bold text-[10px]" title="{{ r.high_impact_events }}">⚠️ มี Event</span>
-            {% else %}
-              <span class="text-slate-500 text-[10px]">ไม่มี</span>
-            {% endif %}
-          </td>
-          <!-- Graph Link -->
-          <td class="px-3 py-2 text-right">
-            <a href="/?expiry_date={{ r.expiry_date }}" class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
-              <span>📊 ดูกราฟ</span>
-            </a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <!-- Modal Footer -->
+    <div class="sticky bottom-0 bg-darkcard/95 backdrop-blur border-t border-darkborder p-3 flex justify-between items-center text-xs">
+      <a href="/?expiry_date={{ r.expiry_date }}" class="text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1">
+        <span>📊 ไปยังกราฟประวัติศาสตร์ของ Expiry นี้ →</span>
+      </a>
+      <button onclick="closeEvolutionModal('{{ r.expiry_date }}')" class="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition">
+        ปิดหน้าต่าง
+      </button>
+    </div>
+
   </div>
 </div>
+{% endfor %}
+
+<script>
+function openEvolutionModal(expiryDate) {
+  const modal = document.getElementById('modal-' + expiryDate);
+  if (modal) {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+}
+
+function closeEvolutionModal(expiryDate) {
+  const modal = document.getElementById('modal-' + expiryDate);
+  if (modal) {
+    modal.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+  }
+}
+
+// Close when clicking outside modal content
+window.addEventListener('click', function(e) {
+  if (e.target.classList.contains('backdrop-blur-sm')) {
+    e.target.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+  }
+});
+</script>
 {% endblock %}
