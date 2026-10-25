@@ -529,67 +529,80 @@
           <th class="px-3 py-2">Expiry Date</th>
           <th class="px-3 py-2">ประเภท</th>
           <th class="px-3 py-2">Settle Price ($)</th>
-          <th class="px-3 py-2">Snapshot ใช้</th>
+          <th class="px-3 py-2">การไหล (Flow)</th>
+          <th class="px-3 py-2">ความแม่นยำ Pin</th>
+          <th class="px-3 py-2">สถานะ GEX</th>
           <th class="px-3 py-2">Max Pain ($)</th>
-          <th class="px-3 py-2">ห่าง MP (%)</th>
-          <th class="px-3 py-2">Pin ±0.5%/±1%</th>
           <th class="px-3 py-2">Top OI ($)</th>
           <th class="px-3 py-2">กรอบ P1–C1 ($)</th>
-          <th class="px-3 py-2">ในกรอบ?</th>
-          <th class="px-3 py-2">Event</th>
+          <th class="px-3 py-2">ข่าว & ทิศทาง</th>
+          <th class="px-3 py-2 text-right">วิเคราะห์</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-darkborder/50">
         {% for r in results %}
-        <tr class="hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-bold text-white">{{ r.expiry_date }}</td>
-          <td class="px-3 py-2"><span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-700 text-slate-300">{{ r.expiry_type or "daily" }}</span></td>
-          <td class="px-3 py-2 font-bold text-white">${{ "{:,.2f}".format(r.settlement_price) }}</td>
-          <td class="px-3 py-2 text-slate-400">{{ r.snapshot_used or "ไม่มี" }}</td>
-          <td class="px-3 py-2 text-amber-400 font-semibold">{{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}</td>
-          <td class="px-3 py-2 font-semibold {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-slate-300{% endif %}">
-            {{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }}
-          </td>
+        <tr class="hover:bg-slate-800/40 transition">
+          <td class="px-3 py-2 font-bold text-white whitespace-nowrap">{{ r.expiry_date }}</td>
           <td class="px-3 py-2">
-            {% if r.max_pain %}
-              {% set w05 = r['[within_0.5pct_max_pain]'] or r['within_0.5pct_max_pain'] or 0 %}
-              {% set w1 = r['within_1pct_max_pain'] or 0 %}
-              {% if w05 %}
-                <span class="px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[10px] font-bold">🎯 ±0.5%</span>
-              {% elif w1 %}
-                <span class="px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 text-[10px] font-bold">✓ ±1.0%</span>
-              {% else %}
-                <span class="text-slate-500">✕</span>
-              {% endif %}
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold {% if r.expiry_type == 'weekly' %}bg-blue-500/20 text-blue-400{% elif r.expiry_type == 'monthly' or r.expiry_type == 'quarterly' %}bg-purple-500/20 text-purple-400{% else %}bg-slate-700 text-slate-300{% endif %}">
+              {{ r.expiry_type or "daily" }}
+            </span>
+          </td>
+          <td class="px-3 py-2 font-bold text-white whitespace-nowrap">${{ "{:,.2f}".format(r.settlement_price) }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if r.flow_info %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.flow_badge_class }}">
+                {{ r.flow_info.flow_label }}
+              </span>
             {% else %}
-              -
+              <span class="text-slate-500">-</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-cyan-400">{{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}</td>
-          <td class="px-3 py-2 text-slate-400">
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if r.flow_info %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.pin_badge_class }}">
+                {{ r.flow_info.pin_badge }}
+              </span>
+            {% else %}
+              <span class="text-slate-500">-</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if r.flow_info %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ r.flow_info.gex_class }}">
+                {{ r.flow_info.gex_label }}
+              </span>
+            {% else %}
+              <span class="text-slate-500">-</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            <span class="text-amber-400 font-semibold">{{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}</span>
+            <span class="text-[10px] ml-1 {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-slate-400{% endif %}">
+              ({{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }})
+            </span>
+          </td>
+          <td class="px-3 py-2 text-cyan-400 whitespace-nowrap">{{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}</td>
+          <td class="px-3 py-2 text-slate-400 whitespace-nowrap">
             {% if r.range_low and r.range_high %}
               ${{ "{:,.0f}".format(r.range_low) }}–${{ "{:,.0f}".format(r.range_high) }}
             {% else %}
               -
             {% endif %}
           </td>
-          <td class="px-3 py-2">
-            {% if r.settled_in_put1_call1_range is not none %}
-              {% if r.settled_in_put1_call1_range == 1 %}
-                <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">อยู่ในกรอบ</span>
-              {% else %}
-                <span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px]">หลุด</span>
-              {% endif %}
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if r.news_info %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border {{ r.news_info.sentiment_class }}">
+                {{ r.news_info.sentiment_badge }}
+              </span>
             {% else %}
-              -
+              <span class="text-slate-500">-</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2">
-            {% if r.has_high_impact_event == 1 %}
-              <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-300 text-[10px] font-bold">⚠️ มี Event</span>
-            | {% else %}
-              <span class="text-slate-500">ไม่มี</span>
-            {% endif %}
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            <a href="/results" class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
+              <span>🔍 เจาะลึก</span>
+            </a>
           </td>
         </tr>
         {% endfor %}
