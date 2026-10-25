@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}BTC Options Pinning Dashboard{% endblock %}</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            },
+            darkbg: '#0f172a',
+            darkcard: '#1e293b',
+            darkborder: '#334155',
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Prompt", sans-serif; }
+  </style>
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Top Navigation Bar -->
+  <header class="bg-darkcard border-b border-darkborder sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <!-- Logo & Title -->
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center font-bold text-emerald-400">
+            ₿
+          </div>
+          <div>
+            <a href="/" class="text-lg font-bold text-white hover:text-emerald-400 transition">BTC Options Pinning</a>
+            <span class="text-xs text-slate-400 block sm:inline sm:ml-2">เวลาไทย (UTC+7) | Deribit Real Data</span>
+          </div>
+        </div>
+
+        <!-- Manual Actions -->
+        <div class="flex items-center space-x-2">
+          <button onclick="triggerRun('snapshot')" id="btnSnap" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-medium px-3 py-1.5 rounded-md shadow flex items-center space-x-1.5 transition">
+            <span>⚡ รัน Snapshot ตอนนี้</span>
+          </button>
+          <button onclick="triggerRun('settle')" id="btnSettle" class="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-medium px-3 py-1.5 rounded-md shadow flex items-center space-x-1.5 transition">
+            <span>🎯 รัน Settlement</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex space-x-1 overflow-x-auto py-2 text-sm border-t border-darkborder/50">
+        <a href="/" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'latest' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          📊 หน้าล่าสุด
+        </a>
+        <a href="/oi_change" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'oi_change' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          📈 การเปลี่ยนแปลง OI
+        </a>
+        <a href="/gex_aggregate" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'gex_aggregate' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          ⚡ GEX รวม
+        </a>
+        <a href="/results" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'results' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          🏆 ผล Settle
+        </a>
+        <a href="/stats" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'stats' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          🎯 สถิติสะสม (Hit-rate)
+        </a>
+        <a href="/big_expiries" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'big_expiries' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          🗓️ Expiry ขนาดใหญ่
+        </a>
+        <a href="/events" class="px-3 py-1.5 rounded-md font-medium transition {% if page == 'events' %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}text-slate-300 hover:bg-slate-800 hover:text-white{% endif %}">
+          📢 ข่าว/อีเวนต์ & Logs
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Notification Toast Modal -->
+  <div id="toast" class="hidden fixed bottom-6 right-6 max-w-md bg-slate-800 border border-slate-700 shadow-2xl rounded-xl p-4 z-50 flex items-start space-x-3">
+    <div id="toastIcon" class="text-xl">ℹ️</div>
+    <div class="flex-1">
+      <div id="toastTitle" class="font-bold text-sm text-white">แจ้งเตือน</div>
+      <div id="toastMsg" class="text-xs text-slate-300 mt-0.5">ข้อความ</div>
+    </div>
+    <button onclick="hideToast()" class="text-slate-400 hover:text-white text-sm">&times;</button>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-darkcard border-t border-darkborder py-4 text-center text-xs text-slate-400">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>BTC Options Price Pinning Study System • Deribit Public API</div>
+      <div>ตารางเวลา: 06:00 Snapshot วันนี้ | 15:30 Settle & Snapshot พรุ่งนี้ | 21:00 Snapshot พรุ่งนี้</div>
+    </div>
+  </footer>
+
+  <script>
+    function showToast(title, message, isSuccess = true) {
+      const toast = document.getElementById('toast');
+      const icon = document.getElementById('toastIcon');
+      document.getElementById('toastTitle').textContent = title;
+      document.getElementById('toastMsg').textContent = message;
+      icon.textContent = isSuccess ? '✅' : '❌';
+      toast.classList.remove('hidden');
+      setTimeout(() => { hideToast(); }, 5000);
+    }
+    function hideToast() {
+      document.getElementById('toast').classList.add('hidden');
+    }
+
+    async function triggerRun(action) {
+      const btn = action === 'snapshot' ? document.getElementById('btnSnap') : document.getElementById('btnSettle');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<span>⏳ กำลังดำเนินการ...</span>';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/scheduler/trigger?action=${action}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('ดำเนินการสำเร็จ', `รัน ${action} เรียบร้อยแล้ว กำลังโหลดข้อมูลใหม่...`, true);
+          setTimeout(() => { window.location.reload(); }, 1500);
+        } else {
+          showToast('พบข้อผิดพลาด', data.detail || 'ไม่สามารถรันได้', false);
+        }
+      } catch (e) {
+        showToast('ล้มเหลว', e.message, false);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
