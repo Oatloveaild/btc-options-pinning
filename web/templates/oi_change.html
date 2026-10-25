@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}การเปลี่ยนแปลง OI (OI Change) - BTC Options Pinning{% endblock %}
+
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+      <span>📈 การเปลี่ยนแปลง OI (OI Change Comparison)</span>
+    </h1>
+    <div class="text-xs text-slate-400 mt-1">
+      เปรียบเทียบ Snapshot แต่ละรอบ (06:00 vs 21:00 vs 15:30) ของ Expiry เดียวกัน เพื่อดูการขยับของ Wall และ Max Pain
+    </div>
+  </div>
+
+  <!-- Expiry Filter Dropdown -->
+  <div class="flex items-center gap-2">
+    <form method="get" action="/oi_change" class="flex items-center gap-2">
+      <label for="expiry_date" class="text-xs text-slate-300 font-medium">เลือก Expiry:</label>
+      <select name="expiry_date" id="expiry_date" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded px-3 py-1.5 focus:outline-none focus:border-emerald-500">
+        {% for d in all_dates %}
+          <option value="{{ d }}" {% if d == selected_date %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <a href="/export/oi_by_strike.csv?expiry_date={{ selected_date }}" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      📥 Export CSV
+    </a>
+  </div>
+</div>
+
+{% if not snaps %}
+<div class="mt-6 bg-darkcard border border-darkborder rounded-xl p-8 text-center text-slate-400">
+  <div class="text-3xl mb-2">🔍</div>
+  <p>ไม่พบประวัติ Snapshot สำหรับ Expiry {{ selected_date }}</p>
+</div>
+{% else %}
+
+<!-- Latest Snapshot Comparison Summary Card -->
+{% set latest = snaps[-1] %}
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+    สรุปการเปลี่ยนแปลงล่าสุดรอบ {{ latest.label }} ({{ latest.snapshot_time_bkk }}) เทียบรอบก่อนหน้า ({{ latest.prev_label or 'N/A' }} {{ latest.prev_snapshot_time_bkk or '' }})
+  </div>
+  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-xs text-slate-400">Total OI Change</div>
+      <div class="text-lg font-bold {% if (latest.total_oi_chg or 0) > 0 %}text-emerald-400{% elif (latest.total_oi_chg or 0) < 0 %}text-rose-400{% else %}text-white{% endif %} mt-1">
+        {{ "{:+,.1f}".format(latest.total_oi_chg) if latest.total_oi_chg is not none else "-" }} BTC
+      </div>
+      <div class="text-[11px] text-slate-400">Call: {{ "{:+,.1f}".format(latest.call_oi_chg) if latest.call_oi_chg is not none else "-" }} | Put: {{ "{:+,.1f}".format(latest.put_oi_chg) if latest.put_oi_chg is not none else "-" }}</div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-xs text-slate-400">การขยับของ Max Pain</div>
+      <div class="text-lg font-bold text-amber-400 mt-1">
+        ${{ "{:,.0f}".format(latest.max_pain) }}
+      </div>
+      <div class="text-[11px] text-slate-400">
+        {% if latest.max_pain_moved %}
+          <span class="text-amber-400 font-semibold">ขยับจาก ${{ "{:,.0f}".format(latest.prev_max_pain) }}</span>
+        {% else %}
+          <span class="text-slate-400">คงที่ (ไม่ขยับ)</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-xs text-slate-400">การขยับของ Call #1 (C1)</div>
+      <div class="text-lg font-bold text-emerald-400 mt-1">
+        ${{ "{:,.0f}".format(latest.call1_strike) }}
+      </div>
+      <div class="text-[11px] text-slate-400">
+        {% if latest.call1_moved %}
+          <span class="text-amber-400 font-semibold">ขยับจาก ${{ "{:,.0f}".format(latest.prev_call1_strike) }}</span>
+        {% else %}
+          <span class="text-slate-400">คงที่ (ไม่ขยับ)</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-xs text-slate-400">การขยับของ Put #1 (P1)</div>
+      <div class="text-lg font-bold text-rose-400 mt-1">
+        ${{ "{:,.0f}".format(latest.put1_strike) }}
+      </div>
+      <div class="text-[11px] text-slate-400">
+        {% if latest.put1_moved %}
+          <span class="text-amber-400 font-semibold">ขยับจาก ${{ "{:,.0f}".format(latest.prev_put1_strike) }}</span>
+        {% else %}
+          <span class="text-slate-400">คงที่ (ไม่ขยับ)</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-xs text-slate-400">Strike ที่ OI เพิ่มสูงสุด 3 อันดับ</div>
+      <div class="text-xs text-emerald-400 font-semibold mt-1">
+        {{ latest.top3_oi_increase or "ไม่มีข้อมูลเพิ่ม" }}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-xs text-slate-400">Strike ที่ OI ลดสูงสุด 3 อันดับ</div>
+      <div class="text-xs text-rose-400 font-semibold mt-1">
+        {{ latest.top3_oi_decrease or "ไม่มีข้อมูลลด" }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Snapshots History Table for this expiry -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">ประวัติ Snapshot ทุกรอบของ Expiry {{ selected_date }}</div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase">
+        <tr>
+          <th class="px-3 py-2">รอบ</th>
+          <th class="px-3 py-2">เวลา (BKK)</th>
+          <th class="px-3 py-2">เหลือ (ชม.)</th>
+          <th class="px-3 py-2">Spot ($)</th>
+          <th class="px-3 py-2">Max Pain ($)</th>
+          <th class="px-3 py-2">Top OI ($)</th>
+          <th class="px-3 py-2">Call #1 ($)</th>
+          <th class="px-3 py-2">Put #1 ($)</th>
+          <th class="px-3 py-2">OI รวม (BTC)</th>
+          <th class="px-3 py-2">OI เปลี่ยน (BTC)</th>
+          <th class="px-3 py-2">P/C</th>
+          <th class="px-3 py-2">Net GEX ($)</th>
+          <th class="px-3 py-2">Gamma Flip ($)</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        {% for s in snaps %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white"><span class="px-1.5 py-0.5 rounded bg-slate-700">{{ s.label }}</span></td>
+          <td class="px-3 py-2">{{ s.snapshot_time_bkk }}</td>
+          <td class="px-3 py-2">{{ s.hours_to_expiry }}</td>
+          <td class="px-3 py-2 font-semibold text-white">${{ "{:,.2f}".format(s.index_price) }}</td>
+          <td class="px-3 py-2 text-amber-400 font-bold">${{ "{:,.0f}".format(s.max_pain) }}</td>
+          <td class="px-3 py-2 text-cyan-400">${{ "{:,.0f}".format(s.top_oi_strike) }}</td>
+          <td class="px-3 py-2 text-emerald-400">${{ "{:,.0f}".format(s.call1_strike) }}</td>
+          <td class="px-3 py-2 text-rose-400">${{ "{:,.0f}".format(s.put1_strike) }}</td>
+          <td class="px-3 py-2">{{ "{:,.1f}".format(s.total_oi) }}</td>
+          <td class="px-3 py-2 {% if (s.total_oi_chg or 0) > 0 %}text-emerald-400{% elif (s.total_oi_chg or 0) < 0 %}text-rose-400{% endif %}">
+            {{ "{:+,.1f}".format(s.total_oi_chg) if s.total_oi_chg is not none else "-" }}
+          </td>
+          <td class="px-3 py-2">{{ s.put_call_oi_ratio }}</td>
+          <td class="px-3 py-2">${{ "{:+,.0f}".format(s.net_gex_usd) if s.net_gex_usd is not none else "-" }}</td>
+          <td class="px-3 py-2">${{ "{:,.0f}".format(s.gamma_flip) if s.gamma_flip is not none else "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
