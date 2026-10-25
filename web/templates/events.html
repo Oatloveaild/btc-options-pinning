@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}ข่าว/อีเวนต์ & Logs - BTC Options Pinning{% endblock %}
+
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+      <span>📢 ปฏิทินเศรษฐกิจ, อีเวนต์คริปโต & สถานะการรัน</span>
+    </h1>
+    <div class="text-xs text-slate-400 mt-1">
+      ดึงข้อมูลอัตโนมัติจาก ForexFactory (USD High/Medium) + ฟอร์มบันทึกอีเวนต์คริปโต (เช่น Token Unlock, SEC)
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <button onclick="refreshForex()" id="btnRefreshForex" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      🔄 อัปเดต ForexFactory
+    </button>
+    <a href="/export/events.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      📥 Export Events CSV
+    </a>
+  </div>
+</div>
+
+<div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <!-- Left column: Add Event Form & Scheduler Logs -->
+  <div class="space-y-6">
+    <!-- Form: Add Custom Crypto Event -->
+    <div class="bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+      <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-3">➕ เพิ่มอีเวนต์คริปโตเอง (Custom Event)</div>
+      <form id="addEventForm" onsubmit="submitCustomEvent(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-300 mb-1">วันที่ (YYYY-MM-DD):</label>
+          <input type="date" name="date" required class="w-full bg-slate-900 border border-darkborder rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1">เวลาไทย (HH:MM เช่น 14:30):</label>
+          <input type="text" name="time_bkk" placeholder="14:30" required pattern="[0-2][0-9]:[0-5][0-9]" class="w-full bg-slate-900 border border-darkborder rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1">รายละเอียดอีเวนต์:</label>
+          <textarea name="event" rows="2" placeholder="เช่น LayerZero token unlock $44M หรือ SEC deadline" required class="w-full bg-slate-900 border border-darkborder rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500"></textarea>
+        </div>
+        <div>
+          <label class="block text-slate-300 mb-1">ระดับผลกระทบ (Impact):</label>
+          <select name="impact" class="w-full bg-slate-900 border border-darkborder rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-emerald-500">
+            <option value="High">High (ผลกระทบสูงมาก)</option>
+            <option value="Medium" selected>Medium (ผลกระทบปานกลาง)</option>
+            <option value="Low">Low (ผลกระทบต่ำ)</option>
+          </select>
+        </div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 rounded transition">
+          บันทึกอีเวนต์
+        </button>
+      </form>
+    </div>
+
+    <!-- Execution Logs -->
+    <div class="bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+      <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">📋 ประวัติการทำงาน Scheduler & Collector</div>
+      <div class="overflow-y-auto max-h-64 space-y-2">
+        {% for l in logs %}
+        <div class="bg-slate-900/80 p-2.5 rounded border border-darkborder/50 text-[11px]">
+          <div class="flex items-center justify-between mb-1">
+            <span class="font-bold text-slate-300">{{ l.run_time_bkk }}</span>
+            <span class="px-1.5 py-0.2 rounded font-semibold {% if l.status == 'SUCCESS' %}bg-emerald-500/20 text-emerald-400{% else %}bg-rose-500/20 text-rose-400{% endif %}">
+              {{ l.status }}
+            </span>
+          </div>
+          <div class="text-slate-400 flex items-center gap-1.5">
+            <span class="px-1 py-0.2 bg-slate-800 rounded text-slate-300">{{ l.label }}</span>
+            <span class="text-slate-500">|</span>
+            <span class="uppercase text-slate-300">{{ l.action }}</span>
+            {% if l.fallback_used %}
+              <span class="text-amber-400 font-bold ml-1">(Fallback)</span>
+            {% endif %}
+          </div>
+          <div class="text-slate-300 mt-1 truncate">{{ l.message }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Right column: Events List -->
+  <div class="lg:col-span-2 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+    <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-3">📅 รายการอีเวนต์ทั้งหมด (เรียงตามวันและเวลาไทย)</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs text-left text-slate-300">
+        <thead class="text-slate-400 bg-slate-800/80 uppercase">
+          <tr>
+            <th class="px-3 py-2">วันที่</th>
+            <th class="px-3 py-2">เวลา (BKK)</th>
+            <th class="px-3 py-2">Impact</th>
+            <th class="px-3 py-2">หัวข้อ / อีเวนต์</th>
+            <th class="px-3 py-2">แหล่งที่มา</th>
+            <th class="px-3 py-2">Forecast / Prev</th>
+            <th class="px-3 py-2">จัดการ</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-darkborder/50">
+          {% for ev in events %}
+          <tr class="hover:bg-slate-800/40">
+            <td class="px-3 py-2 font-semibold text-white whitespace-nowrap">{{ ev.date }}</td>
+            <td class="px-3 py-2 font-bold whitespace-nowrap">{{ ev.time_bkk }}</td>
+            <td class="px-3 py-2 whitespace-nowrap">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold {% if ev.impact == 'High' %}bg-rose-500/30 text-rose-300 border border-rose-500/40{% elif ev.impact == 'Medium' %}bg-amber-500/30 text-amber-300 border border-amber-500/40{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {{ ev.impact }}
+              </span>
+            </td>
+            <td class="px-3 py-2 font-medium text-slate-200">{{ ev.event }}</td>
+            <td class="px-3 py-2 text-slate-400 whitespace-nowrap">
+              {% if ev.source == 'manual' %}
+                <span class="px-1.5 py-0.5 bg-blue-900/40 text-blue-300 rounded text-[10px]">Crypto / Custom</span>
+              {% else %}
+                <span class="px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px]">ForexFactory</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-slate-400 whitespace-nowrap">
+              {% if ev.forecast or ev.previous %}
+                {{ ev.forecast or "-" }} / {{ ev.previous or "-" }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 whitespace-nowrap">
+              {% if ev.source == 'manual' %}
+                <button onclick="deleteCustomEvent({{ ev.id }})" class="text-rose-400 hover:text-rose-300 text-xs">ลบ</button>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function submitCustomEvent(e) {
+    e.preventDefault();
+    const form = document.getElementById('addEventForm');
+    const formData = new FormData(form);
+
+    try {
+      const res = await fetch('/api/events/add', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        showToast('สำเร็จ', 'เพิ่มอีเวนต์เรียบร้อยแล้ว', true);
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        showToast('ล้มเหลว', data.detail || 'ไม่สามารถเพิ่มได้', false);
+      }
+    } catch (err) {
+      showToast('ข้อผิดพลาด', err.message, false);
+    }
+  }
+
+  async function deleteCustomEvent(eventId) {
+    if (!confirm('ต้องการลบอีเวนต์นี้ใช่หรือไม่?')) return;
+    try {
+      const res = await fetch(`/api/events/delete/${eventId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        showToast('สำเร็จ', 'ลบอีเวนต์เรียบร้อยแล้ว', true);
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        showToast('ล้มเหลว', 'ไม่สามารถลบได้', false);
+      }
+    } catch (err) {
+      showToast('ข้อผิดพลาด', err.message, false);
+    }
+  }
+
+  async function refreshForex() {
+    const btn = document.getElementById('btnRefreshForex');
+    btn.textContent = '⏳ กำลังอัปเดต...';
+    try {
+      const res = await fetch('/api/events/refresh_forex', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        showToast('อัปเดตสำเร็จ', `ดึงข้อมูล ForexFactory เรียบร้อย (${data.count} รายการ)`, true);
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    } catch (err) {
+      showToast('ล้มเหลว', err.message, false);
+    } finally {
+      btn.textContent = '🔄 อัปเดต ForexFactory';
+    }
+  }
+</script>
+{% endblock %}
