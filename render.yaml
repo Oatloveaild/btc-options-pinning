@@ -12,3 +12,9 @@ services:
         value: Asia/Bangkok
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: GDRIVE_CLIENT_ID
+        sync: false
+      - key: GDRIVE_CLIENT_SECRET
+        sync: false
+      - key: GDRIVE_REFRESH_TOKEN
+        sync: false
