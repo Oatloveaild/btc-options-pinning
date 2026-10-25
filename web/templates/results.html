@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}ผล Settle (Results) - BTC Options Pinning{% endblock %}
+
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+      <span>🏆 ผล Settle แต่ละ Expiry (Historical Results)</span>
+    </h1>
+    <div class="text-xs text-slate-400 mt-1">
+      ตรวจสอบว่าราคา Settle วิ่งเข้าหาจุด Pinning (Max Pain, Top OI, P1–C1, Gamma Flip) หรือไม่
+    </div>
+  </div>
+
+  <!-- Filters & Export -->
+  <div class="flex flex-wrap items-center gap-2">
+    <form method="get" action="/results" class="flex items-center gap-2">
+      <select name="expiry_type" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500">
+        <option value="all" {% if expiry_type == 'all' %}selected{% endif %}>ทุกประเภท Expiry</option>
+        <option value="daily" {% if expiry_type == 'daily' %}selected{% endif %}>Daily</option>
+        <option value="weekly" {% if expiry_type == 'weekly' %}selected{% endif %}>Weekly</option>
+        <option value="monthly" {% if expiry_type == 'monthly' %}selected{% endif %}>Monthly</option>
+        <option value="quarterly" {% if expiry_type == 'quarterly' %}selected{% endif %}>Quarterly</option>
+      </select>
+
+      <select name="event_filter" onchange="this.form.submit()" class="bg-darkcard border border-darkborder text-slate-200 text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-emerald-500">
+        <option value="all" {% if event_filter == 'all' %}selected{% endif %}>ทุกวัน (มี/ไม่มี Event)</option>
+        <option value="with_event" {% if event_filter == 'with_event' %}selected{% endif %}>เฉพาะวันที่มี High-Impact Event</option>
+        <option value="without_event" {% if event_filter == 'without_event' %}selected{% endif %}>เฉพาะวันที่ไม่มี High-Impact Event</option>
+      </select>
+    </form>
+
+    <a href="/export/results.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      📥 Export Results CSV
+    </a>
+  </div>
+</div>
+
+<!-- Results Table -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase">
+        <tr>
+          <th class="px-3 py-2.5">Expiry Date</th>
+          <th class="px-3 py-2.5">ประเภท</th>
+          <th class="px-3 py-2.5">Settle Price ($)</th>
+          <th class="px-3 py-2.5">Snapshot ที่ใช้</th>
+          <th class="px-3 py-2.5">Max Pain ($)</th>
+          <th class="px-3 py-2.5">ห่าง MP (%)</th>
+          <th class="px-3 py-2.5">Pin ±0.5% / ±1%</th>
+          <th class="px-3 py-2.5">Top OI ($)</th>
+          <th class="px-3 py-2.5">ห่าง Top (%)</th>
+          <th class="px-3 py-2.5">กรอบ P1–C1 ($)</th>
+          <th class="px-3 py-2.5">ในกรอบ?</th>
+          <th class="px-3 py-2.5">Gamma Flip</th>
+          <th class="px-3 py-2.5">High Event</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        {% for r in results %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white">{{ r.expiry_date }}</td>
+          <td class="px-3 py-2">
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold {% if r.expiry_type == 'weekly' %}bg-blue-500/20 text-blue-400{% elif r.expiry_type == 'monthly' or r.expiry_type == 'quarterly' %}bg-purple-500/20 text-purple-400{% else %}bg-slate-700 text-slate-300{% endif %}">
+              {{ r.expiry_type or "daily" }}
+            </span>
+          </td>
+          <td class="px-3 py-2 font-bold text-white">${{ "{:,.2f}".format(r.settlement_price) }}</td>
+          <td class="px-3 py-2 text-slate-400">
+            {% if r.snapshot_used %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] {% if 'fallback' in r.snapshot_used %}bg-amber-500/20 text-amber-300{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {{ r.snapshot_used }}
+              </span>
+            {% else %}
+              <span class="text-slate-500 italic">ไม่มี snap</span>
+            {% endif %}
+          </td>
+
+          <!-- Max Pain -->
+          <td class="px-3 py-2 text-amber-400 font-semibold">
+            {{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}
+          </td>
+          <td class="px-3 py-2 font-semibold {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-slate-300{% endif %}">
+            {{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }}
+          </td>
+          <td class="px-3 py-2">
+            {% if r.max_pain %}
+              {% set w05 = r['[within_0.5pct_max_pain]'] or r['within_0.5pct_max_pain'] or 0 %}
+              {% set w1 = r['within_1pct_max_pain'] or 0 %}
+              {% if w05 %}
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[10px] font-bold">🎯 ±0.5%</span>
+              {% elif w1 %}
+                <span class="px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 text-[10px] font-bold">✓ ±1.0%</span>
+              {% else %}
+                <span class="text-slate-500 text-[11px]">✕</span>
+              {% endif %}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+
+          <!-- Top OI -->
+          <td class="px-3 py-2 text-cyan-400">
+            {{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}
+          </td>
+          <td class="px-3 py-2">
+            {{ "{:+.2f}%".format(r.dist_top_oi_pct) if r.dist_top_oi_pct is not none else "-" }}
+          </td>
+
+          <!-- Range P1-C1 -->
+          <td class="px-3 py-2 text-slate-400">
+            {% if r.range_low and r.range_high %}
+              ${{ "{:,.0f}".format(r.range_low) }}–${{ "{:,.0f}".format(r.range_high) }}
+              <span class="text-[10px] text-slate-500">({{ "{:.1f}%".format(r.range_width_pct) }})</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if r.settled_in_put1_call1_range is not none %}
+              {% if r.settled_in_put1_call1_range == 1 %}
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">อยู่ในกรอบ</span>
+              {% else %}
+                <span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px]">หลุดกรอบ</span>
+              {% endif %}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+
+          <!-- Gamma Flip -->
+          <td class="px-3 py-2">
+            {% if r.snap_gamma_flip %}
+              <span class="text-slate-300">${{ "{:,.0f}".format(r.snap_gamma_flip) }}</span>
+              <span class="text-[10px] ml-1 {% if r.settled_vs_gamma_flip == 'above' %}text-emerald-400{% else %}text-rose-400{% endif %}">
+                ({{ r.settled_vs_gamma_flip }})
+              </span>
+            {% else %}
+              <span class="text-slate-500">-</span>
+            {% endif %}
+          </td>
+
+          <!-- High Impact Event -->
+          <td class="px-3 py-2">
+            {% if r.has_high_impact_event == 1 %}
+              <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-300 font-bold text-[10px]" title="{{ r.high_impact_events }}">⚠️ มี Event</span>
+            {% else %}
+              <span class="text-slate-500 text-[10px]">ไม่มี</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
