@@ -15,6 +15,8 @@ def job_0600():
     logger.info("Executing 06:00 scheduled snapshot (today's expiry)...")
     try:
         run_snapshot(label="0600")
+        from src.gdrive_sync import upload_db_to_gdrive
+        upload_db_to_gdrive()
     except Exception as e:
         logger.error(f"Error in 06:00 job: {e}")
 
@@ -32,6 +34,8 @@ def job_1530():
     # 2. Snapshot tomorrow's expiry
     try:
         run_snapshot(label="1530")
+        from src.gdrive_sync import upload_db_to_gdrive
+        upload_db_to_gdrive()
     except Exception as e:
         logger.error(f"Error in 15:30 snapshot: {e}")
         log_execution(ref_time_str, "1530", "snapshot", "ERROR", str(e))
@@ -41,6 +45,8 @@ def job_2100():
     logger.info("Executing 21:00 scheduled snapshot (tomorrow's expiry)...")
     try:
         run_snapshot(label="2100")
+        from src.gdrive_sync import upload_db_to_gdrive
+        upload_db_to_gdrive()
     except Exception as e:
         logger.error(f"Error in 21:00 job: {e}")
 
