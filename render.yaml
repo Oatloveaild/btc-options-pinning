@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: btc-options-pinning
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: TZ
+        value: Asia/Bangkok
+      - key: PYTHONUNBUFFERED
+        value: "1"
