@@ -88,11 +88,23 @@ def api_refresh_forex():
     return {"status": "success", "count": len(evs)}
 
 
+def is_expiry_active(exp_date_str: str) -> bool:
+    """Check if an expiry date is still active (unexpired) in Bangkok time (UTC+7)."""
+    now_bkk = datetime.now(BKK_TZ)
+    today_str = now_bkk.strftime("%Y-%m-%d")
+    if exp_date_str < today_str:
+        return False
+    if exp_date_str == today_str and now_bkk.hour >= 15:
+        return False
+    return True
+
+
 @app.get("/api/timeline")
-def api_timeline(expiry_date: Optional[str] = None):
+def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
     """
     Timeline API for interactive time-slider scrubbing (like oi.iyortz.com).
     Returns list of chronological snapshots and their per-strike data.
+    scope: 'active' (default for main dashboard), 'expired' (for archive), 'all'
     """
     with get_db() as conn:
         # Get distinct expiries with counts sorted chronologically (ascending)
@@ -103,7 +115,17 @@ def api_timeline(expiry_date: Optional[str] = None):
             GROUP BY expiry_date
             ORDER BY expiry_date ASC
         """)
-        expiries = [dict(r) for r in cur_exp.fetchall()]
+        all_exp = [dict(r) for r in cur_exp.fetchall()]
+
+        if scope == "active":
+            expiries = [e for e in all_exp if is_expiry_active(e["expiry_date"])]
+            # If all upcoming are somehow empty, fallback to last 3 expiries
+            if not expiries and all_exp:
+                expiries = all_exp[-3:]
+        elif scope == "expired":
+            expiries = [e for e in all_exp if not is_expiry_active(e["expiry_date"])]
+        else:
+            expiries = all_exp
 
         # Filter query for snapshots
         if expiry_date and expiry_date != "all":
@@ -331,17 +353,33 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
     - ForexFactory & Custom Events Feed
     """
     with get_db() as conn:
+        now_bkk = datetime.now(BKK_TZ)
+        today_str = now_bkk.strftime("%Y-%m-%d")
+
         # 1. Latest snapshot (nearest active unexpired target by default, or specific expiry if requested)
         if expiry_date and expiry_date != "all":
             cur = conn.execute(
                 "SELECT * FROM snapshots WHERE expiry_date = ? ORDER BY snapshot_time_bkk DESC LIMIT 1",
                 (expiry_date,),
             )
+            latest_row = cur.fetchone()
         else:
+            # Pick nearest active (unexpired) future expiry first
             cur = conn.execute(
-                "SELECT * FROM snapshots ORDER BY snapshot_time_bkk DESC, hours_to_expiry ASC LIMIT 1"
+                """
+                SELECT * FROM snapshots 
+                WHERE (expiry_date > ? OR (expiry_date = ? AND ? < 15))
+                ORDER BY snapshot_time_bkk DESC, hours_to_expiry ASC LIMIT 1
+                """,
+                (today_str, today_str, now_bkk.hour),
             )
-        latest_row = cur.fetchone()
+            latest_row = cur.fetchone()
+            if not latest_row:
+                cur = conn.execute(
+                    "SELECT * FROM snapshots ORDER BY snapshot_time_bkk DESC, hours_to_expiry ASC LIMIT 1"
+                )
+                latest_row = cur.fetchone()
+
         if not latest_row:
             cur = conn.execute("SELECT * FROM snapshots ORDER BY snapshot_time_bkk DESC LIMIT 1")
             latest_row = cur.fetchone()
@@ -510,7 +548,8 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
             "strikes": strikes,
             "snaps_same_expiry": snaps_same_expiry,
             "big_expiries": big_expiries,
-            "results": all_results,
+            "results": all_results[:5],
+            "total_settled_count": len(all_results),
             "events": events_list,
             "logs": logs,
             "all_dates": all_dates,
