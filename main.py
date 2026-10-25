@@ -5,6 +5,13 @@ from src.db import init_db
 from src.importer import import_historical_data
 
 if __name__ == "__main__":
+    # Try restoring latest database from Google Drive on startup
+    try:
+        from src.gdrive_sync import download_db_from_gdrive
+        download_db_from_gdrive()
+    except Exception as e:
+        print(f"Google Drive restore check skipped: {e}")
+
     init_db()
     # If DB is empty, run importer
     from src.db import get_db
