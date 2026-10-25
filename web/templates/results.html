@@ -56,6 +56,7 @@
           <th class="px-3 py-2.5">ในกรอบ?</th>
           <th class="px-3 py-2.5">Gamma Flip</th>
           <th class="px-3 py-2.5">High Event</th>
+          <th class="px-3 py-2.5 text-right">กราฟย้อนหลัง</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-darkborder/50">
@@ -149,6 +150,12 @@
             {% else %}
               <span class="text-slate-500 text-[10px]">ไม่มี</span>
             {% endif %}
+          </td>
+          <!-- Graph Link -->
+          <td class="px-3 py-2 text-right">
+            <a href="/?expiry_date={{ r.expiry_date }}" class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition">
+              <span>📊 ดูกราฟ</span>
+            </a>
           </td>
         </tr>
         {% endfor %}
