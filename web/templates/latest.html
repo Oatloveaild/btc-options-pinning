@@ -169,9 +169,9 @@
       <!-- Expiry Target & Groups -->
       <div class="md:col-span-4">
         <div class="flex items-center justify-between mb-1">
-          <label class="text-[10px] uppercase font-bold text-slate-400">Expiry Target</label>
+          <label class="text-[10px] uppercase font-bold text-slate-400">Expiry Target (Active)</label>
           <div class="flex space-x-1 text-[10px]">
-            <button onclick="selectGrouping('today')" id="grpToday" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">วันนี้</button>
+            <button onclick="selectGrouping('today')" id="grpToday" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">วันนี้/พรุ่งนี้</button>
             <button onclick="selectGrouping('weekly')" id="grpWeekly" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">ศุกร์นี้</button>
             <button onclick="selectGrouping('monthly')" id="grpMonthly" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">สิ้นเดือน</button>
             <button onclick="selectGrouping('all')" id="grpAll" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">ทั้งหมด</button>
@@ -180,6 +180,13 @@
         <select id="expiryPicker" onchange="onExpiryChange(this.value)" class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 font-medium">
           <!-- Injected via JS -->
         </select>
+        <div class="flex items-center justify-between mt-1 text-[10px]">
+          <span class="text-slate-400">เฉพาะสัญญาที่ยังไม่หมดอายุ</span>
+          <a href="/results" class="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-0.5 transition">
+            <span>🗄️ ดู Expiry ย้อนหลังที่หมดอายุแล้ว (Archive)</span>
+            <span>→</span>
+          </a>
+        </div>
       </div>
 
       <!-- Time Slider & Player (oi.iyortz style) -->
@@ -502,9 +509,17 @@
   <div class="flex items-center justify-between pb-3 border-b border-darkborder mb-3">
     <div class="flex items-center space-x-2">
       <span class="text-lg">🏆</span>
-      <h3 class="text-base font-bold text-white">ตารางผล Settle ย้อนหลังทุก Expiry (Settlement Results History)</h3>
+      <div>
+        <h3 class="text-base font-bold text-white">สรุปผล Settle ล่าสุด 5 วัน (Recent Settlements)</h3>
+        <span class="text-[11px] text-slate-400">แสดงผล 5 วันล่าสุด เพื่อให้หน้าเว็บโหลดเร็วและกระชับ</span>
+      </div>
     </div>
-    <a href="/export/results.csv" class="text-xs text-blue-400 hover:text-blue-300">📥 Export Results CSV</a>
+    <div class="flex items-center space-x-2">
+      <a href="/results" class="text-xs px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-semibold border border-emerald-500/40 transition">
+        🗄️ ดูประวัติทั้งหมด (Archive)
+      </a>
+      <a href="/export/results.csv" class="text-xs text-blue-400 hover:text-blue-300">📥 Export CSV</a>
+    </div>
   </div>
 
   <div class="overflow-x-auto max-h-96">
@@ -572,7 +587,7 @@
           <td class="px-3 py-2">
             {% if r.has_high_impact_event == 1 %}
               <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-300 text-[10px] font-bold">⚠️ มี Event</span>
-            {% else %}
+            | {% else %}
               <span class="text-slate-500">ไม่มี</span>
             {% endif %}
           </td>
@@ -580,6 +595,14 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <div class="mt-3 pt-3 border-t border-darkborder/50 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+    <span class="text-slate-400">ประวัติสะสมทั้งหมด {{ total_settled_count }} Expiry ถูกจัดเก็บไว้ในหน้าคลังประวัติ</span>
+    <a href="/results" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-semibold transition">
+      <span>🗄️ เปิดดูคลังประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Historical Archive)</span>
+      <span>→</span>
+    </a>
   </div>
 </div>
 
@@ -897,9 +920,9 @@
 
   // Load timeline data
   async function loadTimeline(expiryDate = null) {
-    let url = '/api/timeline';
+    let url = '/api/timeline?scope=active';
     if (expiryDate && expiryDate !== 'all') {
-      url += `?expiry_date=${expiryDate}`;
+      url += `&expiry_date=${expiryDate}`;
     }
 
     try {
@@ -914,13 +937,19 @@
           const opt = document.createElement('option');
           opt.value = e.expiry_date;
           let tag = e.expiry_type || '';
-          if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • วันนี้';
+          if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • เป้าหมายหลัก';
           else if (e.expiry_type === 'monthly') tag += ' • สิ้นเดือน';
           else if (e.expiry_type === 'quarterly') tag += ' • ไตรมาส';
           else if (e.expiry_type === 'weekly') tag += ' • ศุกร์';
           opt.textContent = `${e.expiry_date} (${tag}) • ${e.snap_count} รอบ`;
           picker.appendChild(opt);
         });
+
+        const optArch = document.createElement('option');
+        optArch.value = '__archive__';
+        optArch.textContent = '🗄️ ดูประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Archive) →';
+        picker.appendChild(optArch);
+
         if (expiryDate) picker.value = expiryDate;
       }
 
@@ -1121,6 +1150,10 @@
   }
 
   function onExpiryChange(val) {
+    if (val === '__archive__') {
+      window.location.href = '/results';
+      return;
+    }
     pausePlayback();
     loadTimeline(val);
   }
