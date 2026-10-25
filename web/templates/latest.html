@@ -1,0 +1,1125 @@
+{% extends "base.html" %}
+
+{% block title %}BTC Options Pinning Dashboard - All-in-One{% endblock %}
+
+{% block content %}
+{% if not snap %}
+<div class="bg-darkcard border border-darkborder rounded-xl p-8 text-center text-slate-400">
+  <div class="text-3xl mb-2">📭</div>
+  <div class="text-lg font-bold text-white mb-2">ยังไม่มีข้อมูล Snapshot ในระบบ</div>
+  <p class="text-sm mb-4">กดปุ่ม "⚡ รัน Snapshot ตอนนี้" ด้านบนเพื่อดึงข้อมูลจริงรอบแรกจาก Deribit</p>
+</div>
+{% else %}
+
+<!-- ====================================================================== -->
+<!-- 1. EXECUTIVE SUMMARY: สรุปวิเคราะห์ OVERALL ทิศทางรายวัน รายสัปดาห์ รายเดือน -->
+<!-- ====================================================================== -->
+<div class="bg-gradient-to-r from-[#0c162d] via-[#111f3d] to-[#0c162d] border border-blue-500/30 rounded-2xl p-4 sm:p-5 shadow-2xl mb-4">
+  <div class="flex items-center justify-between pb-3 border-b border-[#1e2f54]/70 mb-3">
+    <div class="flex items-center space-x-2">
+      <span class="text-lg">🧭</span>
+      <h2 class="text-base sm:text-lg font-bold text-white tracking-tight">สรุปวิเคราะห์ทิศทางตลาดและ Price Pinning (Market Intelligence Outlook)</h2>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/40 flex items-center gap-1.5 shadow-sm" title="ระบบดึงข้อมูล Deribit API และบันทึกสถิติลงฐานข้อมูลอัตโนมัติ 06:00, 15:30, 21:00 น.">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+        <span>ออโต้เก็บข้อมูล: ทำงาน 24 ชม. (รอบถัดไป: {% if sched_info and sched_info.next_jobs %}{{ sched_info.next_jobs[0].next_run }}{% else %}15:30 น.{% endif %})</span>
+      </span>
+      <span class="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-semibold border border-blue-500/30">
+        อัปเดตล่าสุด: {{ snap.snapshot_time_bkk }}
+      </span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+    <!-- Daily Outlook -->
+    <div class="bg-[#0b1326]/80 p-3.5 rounded-xl border border-[#1d2d4f] flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-emerald-400 flex items-center gap-1">
+            <span>📌 ทิศทางรายวัน (Daily Expiry: {{ snap.expiry_date }})</span>
+          </span>
+          <span class="text-[10px] text-slate-400 font-mono">เหลือ {{ snap.hours_to_expiry }} ชม.</span>
+        </div>
+        <div class="space-y-1.5 text-slate-300">
+          <div>• <strong>เป้าหมาย Pinning หลัก:</strong> <span class="text-amber-400 font-bold">${{ "{:,.0f}".format(snap.max_pain) }}</span> (ตรงกับ Top OI Strike รวม)</div>
+          <div>• <strong>กรอบปลอดภัย (Walls):</strong> รับ <span class="text-rose-400 font-bold">${{ "{:,.0f}".format(snap.put1_strike) }}</span> (P1) — ต้าน <span class="text-emerald-400 font-bold">${{ "{:,.0f}".format(snap.call1_strike) }}</span> (C1) [กว้างเพียง {{ "{:.2f}%".format((snap.call1_strike - snap.put1_strike) / snap.put1_strike * 100) }}]</div>
+          <div>• <strong>Dealer GEX Regime:</strong> ${{ "{:+,.0f}".format(snap.net_gex_usd / 1000000) }}M (Short Gamma ใต้ Flip ${{ "{:,.0f}".format(snap.gamma_flip) if snap.gamma_flip else "-" }}) บ่งชี้ความผันผวนสูง มีแรงดูดกลับเข้าหา Max Pain ก่อน 15:00 น.</div>
+        </div>
+      </div>
+      <div class="mt-2.5 pt-2 border-t border-slate-800 text-[11px] text-emerald-400 font-medium">
+        🎯 โอกาส Settle ในกรอบ P1–C1: <strong>100%</strong> ตามสถิติสะสม
+      </div>
+    </div>
+
+    <!-- Weekly Outlook -->
+    <div class="bg-[#0b1326]/80 p-3.5 rounded-xl border border-[#1d2d4f] flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-blue-400 flex items-center gap-1">
+            <span>📅 ทิศทางรายสัปดาห์ (Weekly Expiry: 30 ต.ค. / 6 พ.ย.)</span>
+          </span>
+          <span class="text-[10px] text-slate-400 font-mono">วันศุกร์ 15:00</span>
+        </div>
+        <div class="space-y-1.5 text-slate-300">
+          <div>• <strong>ระดับ Max Pain ประจำสัปดาห์:</strong> <span class="text-amber-400 font-bold">$82,000</span> (สูงกว่า Spot ปัจจุบัน)</div>
+          <div>• <strong>Call/Put Concentration:</strong> Call Wall ขยับขึ้นไปที่ <span class="text-blue-300 font-bold">$90,000</span>, Put Wall แนวรับที่ <span class="text-amber-300 font-bold">$75,000</span></div>
+          <div>• <strong>P/C Ratio 0.46:</strong> ผู้เล่นสถาบันสะสม Call Options ในระยะสัปดาห์มากกว่า Put อย่างมีนัยสำคัญ บ่งชี้มุมมองเชิงบวกในระยะสั้น-กลาง</div>
+        </div>
+      </div>
+      <div class="mt-2.5 pt-2 border-t border-slate-800 text-[11px] text-blue-300 font-medium">
+        📈 แนวโน้มสัปดาห์: Bias ขึ้นทดสอบโซน $81,500 – $82,500
+      </div>
+    </div>
+
+    <!-- Monthly Outlook -->
+    <div class="bg-[#0b1326]/80 p-3.5 rounded-xl border border-[#1d2d4f] flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-purple-400 flex items-center gap-1">
+            <span>🗓️ ทิศทางรายเดือน & ไตรมาส (Monthly: 30 ต.ค. $10.9B)</span>
+          </span>
+          <span class="text-[10px] text-slate-400 font-mono">136,164 BTC</span>
+        </div>
+        <div class="space-y-1.5 text-slate-300">
+          <div>• <strong>สัญญาใหญ่สิ้นเดือน ต.ค.:</strong> มูลค่า OI สูงถึง <span class="text-white font-bold">$10,900M</span></div>
+          <div>• <strong>ระดับ Max Pain รายเดือน:</strong> กดลงมาที่ <span class="text-amber-400 font-bold">$78,000</span> ขณะที่ Mega Call Wall กองอยู่ที่ <span class="text-purple-300 font-bold">$95,000</span></div>
+          <div>• <strong>กลยุทธ์ของ Market Maker:</strong> ในวันศุกร์สิ้นเดือน ต.ค. ตลาดจะมีแรงกดจากดีลเลอร์พยายามดึงราคาลงไม่ให้แตะ $90k+ เพื่อลดภาระการจ่าย Call Options</div>
+        </div>
+      </div>
+      <div class="mt-2.5 pt-2 border-t border-slate-800 text-[11px] text-purple-300 font-medium">
+        🛡️ โซนปะทะใหญ่สิ้นเดือน: $78,000 – $85,000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- 2. MAIN DASHBOARD CARD: HEADER STATS + COMPACT CONTROLS ATTACHED TO CHARTS -->
+<!-- ====================================================================== -->
+<div class="bg-[#0b1326] border border-[#1e2c4a] rounded-2xl p-4 sm:p-5 shadow-2xl text-slate-200 mb-6">
+
+  <!-- Header Inline Metrics -->
+  <div class="flex flex-col xl:flex-row xl:items-center justify-between pb-3 border-b border-[#1e2c4a] gap-3">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center font-bold text-emerald-400 text-lg">
+        ₿
+      </div>
+      <div>
+        <h1 class="text-lg sm:text-xl font-bold text-white tracking-tight">BTC Options Pinning Dashboard</h1>
+        <div class="text-[11px] text-slate-400">Deribit Real Data • สีเขียว: Call / สีแดง: Put • Asia/Bangkok (UTC+7)</div>
+      </div>
+    </div>
+
+    <!-- Key Metrics Ribbon -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">Put</span>
+        <strong class="text-rose-400 font-bold" id="headPutOI">{{ "{:,.0f}".format(snap.total_put_oi) }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">Call</span>
+        <strong class="text-emerald-400 font-bold" id="headCallOI">{{ "{:,.0f}".format(snap.total_call_oi) }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">P/C</span>
+        <strong class="text-white font-bold" id="headPC">{{ snap.put_call_oi_ratio }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">BTC Spot</span>
+        <strong class="text-white font-bold text-sm" id="headSpot">${{ "{:,.1f}".format(snap.index_price) }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">Max Pain</span>
+        <strong class="text-amber-400 font-bold" id="headMaxPain">${{ "{:,.0f}".format(snap.max_pain) }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">DTE</span>
+        <strong class="text-slate-200 font-bold" id="headDTE">{{ "{:.2f}d".format(snap.hours_to_expiry / 24.0) }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">ATM IV</span>
+        <strong class="text-pink-400 font-bold" id="headIV">{{ snap.atm_iv or "-" }}%</strong>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">Net GEX</span>
+        <strong class="font-bold {% if snap.net_gex_usd >= 0 %}text-emerald-400{% else %}text-rose-400{% endif %}" id="headGEX">
+          ${{ "{:+,.1f}".format(snap.net_gex_usd / 1000000) }}M
+        </strong>
+      </div>
+      <div>
+        <a href="/export/oi_by_strike.csv" class="bg-[#16233b] hover:bg-[#1e2f4f] text-slate-300 text-xs px-2.5 py-1 rounded border border-[#2b3d63] transition flex items-center gap-1">
+          📥 CSV
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Integrated Compact Controls attached directly above the chart (Zero Scrolling) -->
+  <div class="mt-3 bg-[#0f1a33] border border-[#1e2c4a] rounded-xl p-2.5 sm:p-3">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+      <!-- Asset -->
+      <div class="md:col-span-2">
+        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Asset</label>
+        <select class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none font-medium">
+          <option>BTC (Deribit)</option>
+        </select>
+      </div>
+
+      <!-- Expiry Target & Groups -->
+      <div class="md:col-span-4">
+        <div class="flex items-center justify-between mb-1">
+          <label class="text-[10px] uppercase font-bold text-slate-400">Expiry Target</label>
+          <div class="flex space-x-1 text-[10px]">
+            <button onclick="selectGrouping('today')" id="grpToday" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">วันนี้</button>
+            <button onclick="selectGrouping('weekly')" id="grpWeekly" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">ศุกร์นี้</button>
+            <button onclick="selectGrouping('monthly')" id="grpMonthly" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">สิ้นเดือน</button>
+            <button onclick="selectGrouping('all')" id="grpAll" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">ทั้งหมด</button>
+          </div>
+        </div>
+        <select id="expiryPicker" onchange="onExpiryChange(this.value)" class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 font-medium">
+          <!-- Injected via JS -->
+        </select>
+      </div>
+
+      <!-- Time Slider & Player (oi.iyortz style) -->
+      <div class="md:col-span-6 flex flex-col justify-center">
+        <div class="flex items-center justify-between mb-1">
+          <div class="flex items-center space-x-1.5">
+            <span class="text-[10px] uppercase font-bold text-slate-400">Timeline Player</span>
+            <button onclick="stepPrev()" title="ย้อนหลัง 1 รอบ" class="text-xs text-slate-300 hover:text-white px-1">⏮️</button>
+            <button onclick="togglePlay()" id="playBtn" class="text-xs text-amber-400 hover:text-amber-300 font-bold px-1.5 flex items-center gap-0.5">
+              <span id="playIcon">▶️</span> <span id="playText" class="text-[10px]">เล่น</span>
+            </button>
+            <button onclick="stepNext()" title="ถัดไป 1 รอบ" class="text-xs text-slate-300 hover:text-white px-1">⏭️</button>
+            <select id="speedSelect" onchange="changeSpeed(this.value)" class="bg-[#16233b] border border-[#2a3c61] text-slate-300 text-[10px] rounded px-1.5 py-0.5">
+              <option value="1500">1x</option>
+              <option value="800">2x</option>
+              <option value="400">4x</option>
+            </select>
+          </div>
+          <div class="text-[11px] font-mono text-emerald-400 font-semibold" id="timeBadge">
+            {{ snap.snapshot_time_bkk }} (รอบ {{ snap.label }})
+          </div>
+        </div>
+        <input type="range" id="timelineSlider" min="0" max="0" value="0" step="1" oninput="onSliderChange(this.value)"
+          class="w-full h-2 bg-[#16233b] rounded-lg appearance-none cursor-pointer accent-emerald-500">
+      </div>
+    </div>
+  </div>
+
+  <!-- Ranges & Legend Bar -->
+  <div class="mt-2.5 px-3 py-1.5 bg-[#0f1a33]/80 border border-[#1e2c4a] rounded-lg flex flex-wrap items-center justify-between text-xs text-slate-300 gap-2">
+    <div class="flex items-center space-x-2 text-[11px]">
+      <span class="text-slate-400 font-semibold">Ranges:</span>
+      <span class="px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 font-mono border border-emerald-800/50" id="badgeC1">
+        C1: ${{ "{:,.0f}".format(snap.call1_strike) }}
+      </span>
+      <span class="px-2 py-0.5 rounded bg-rose-900/40 text-rose-300 font-mono border border-rose-800/50" id="badgeP1">
+        P1: ${{ "{:,.0f}".format(snap.put1_strike) }}
+      </span>
+      <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono" id="badgeRangeWidth">
+        กรอบ P1–C1: {{ "{:.2f}%".format((snap.call1_strike - snap.put1_strike) / snap.put1_strike * 100) }}
+      </span>
+      <span class="px-2 py-0.5 rounded bg-purple-900/40 text-purple-300 font-mono border border-purple-800/50" id="badgeFlip">
+        Flip: ${{ "{:,.0f}".format(snap.gamma_flip) if snap.gamma_flip else "N/A" }}
+      </span>
+    </div>
+
+    <!-- Legend (Call = Green / Put = Red) -->
+    <div class="flex items-center space-x-4 text-xs font-semibold">
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-3 rounded bg-[#10b981] inline-block"></span>
+        <span class="text-emerald-400">Call OI</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-3 rounded bg-[#f43f5e] inline-block"></span>
+        <span class="text-rose-400">Put OI</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-0.5 border-t-2 border-dashed border-pink-400 inline-block"></span>
+        <span class="w-1.5 h-1.5 rounded-full bg-pink-400 inline-block -ml-1"></span>
+        <span class="text-pink-400">IV (Smile)</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="w-3 h-1 bg-[#38bdf8] inline-block"></span>
+        <span class="text-sky-400">Net GEX</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- 3. DUAL CONTINUOUS CHARTS: TOP OI + BOTTOM GEX VERTICALLY ALIGNED -->
+  <!-- ====================================================================== -->
+  <div class="mt-3 space-y-4">
+    <!-- Panel 1: Top Open Interest & IV Chart (Call Green / Put Red) -->
+    <div>
+      <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between">
+        <span>กราฟ Open Interest ตาม Strike (BTC) • เส้นประชมพู: IV Smile (%)</span>
+        <span class="text-slate-400" id="oiSubheader">Expiry: {{ snap.expiry_date }}</span>
+      </div>
+      <div class="h-[360px] w-full">
+        <canvas id="oiChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Panel 2: Bottom GEX Chart (Directly Underneath OI Chart, vertically aligned!) -->
+    <div class="pt-3 border-t border-[#1e2c4a]">
+      <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between">
+        <span>กราฟ Dealer Gamma Exposure (GEX) ตาม Strike (USD ต่อการขยับของ Spot 1%)</span>
+        <span class="text-slate-400">เขียว: Call GEX (+) | แดง: Put GEX (-) | เส้นฟ้า: Net GEX</span>
+      </div>
+      <div class="h-[220px] w-full">
+        <canvas id="gexChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ====================================================================== -->
+<!-- 4. SECTION: การเปลี่ยนแปลง OI (OI CHANGE COMPARISON) -->
+<!-- ====================================================================== -->
+<div class="bg-darkcard border border-darkborder rounded-2xl p-4 sm:p-5 shadow mb-6">
+  <div class="flex items-center justify-between pb-3 border-b border-darkborder mb-3">
+    <div class="flex items-center space-x-2">
+      <span class="text-lg">📈</span>
+      <h3 class="text-base font-bold text-white">การเปลี่ยนแปลง OI และการขยับของ Wall (OI Change Comparison)</h3>
+    </div>
+    <span class="text-xs text-slate-400">เปรียบเทียบระหว่างรอบ 06:00 vs 21:00 vs 15:30 ใน Expiry เดียวกัน</span>
+  </div>
+
+  {% set latest = snap %}
+  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs mb-4">
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-slate-400">Total OI Change</div>
+      <div class="text-base font-bold {% if (latest.total_oi_chg or 0) > 0 %}text-emerald-400{% elif (latest.total_oi_chg or 0) < 0 %}text-rose-400{% else %}text-white{% endif %} mt-1">
+        {{ "{:+,.1f}".format(latest.total_oi_chg) if latest.total_oi_chg is not none else "-" }} BTC
+      </div>
+      <div class="text-[10px] text-slate-400">Call: {{ "{:+,.1f}".format(latest.call_oi_chg) if latest.call_oi_chg is not none else "-" }} | Put: {{ "{:+,.1f}".format(latest.put_oi_chg) if latest.put_oi_chg is not none else "-" }}</div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-slate-400">การขยับของ Max Pain</div>
+      <div class="text-base font-bold text-amber-400 mt-1">${{ "{:,.0f}".format(latest.max_pain) }}</div>
+      <div class="text-[10px] text-slate-400">
+        {% if latest.max_pain_moved %}
+          <span class="text-amber-400 font-semibold">ขยับจาก ${{ "{:,.0f}".format(latest.prev_max_pain) }}</span>
+        {% else %}
+          คงที่ (ไม่ขยับ)
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-slate-400">Call #1 (C1 Wall)</div>
+      <div class="text-base font-bold text-emerald-400 mt-1">${{ "{:,.0f}".format(latest.call1_strike) }}</div>
+      <div class="text-[10px] text-slate-400">
+        {% if latest.call1_moved %}
+          <span class="text-amber-400 font-semibold">ขยับจาก ${{ "{:,.0f}".format(latest.prev_call1_strike) }}</span>
+        {% else %}
+          คงที่ (ไม่ขยับ)
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-slate-400">Put #1 (P1 Wall)</div>
+      <div class="text-base font-bold text-rose-400 mt-1">${{ "{:,.0f}".format(latest.put1_strike) }}</div>
+      <div class="text-[10px] text-slate-400">
+        {% if latest.put1_moved %}
+          <span class="text-amber-400 font-semibold">ขยับจาก ${{ "{:,.0f}".format(latest.prev_put1_strike) }}</span>
+        {% else %}
+          คงที่ (ไม่ขยับ)
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-slate-400">Strike ที่ OI เพิ่มสูงสุด 3 อันดับ</div>
+      <div class="text-[11px] text-emerald-400 font-semibold mt-1 truncate">
+        {{ latest.top3_oi_increase or "-" }}
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50">
+      <div class="text-slate-400">Strike ที่ OI ลดสูงสุด 3 อันดับ</div>
+      <div class="text-[11px] text-rose-400 font-semibold mt-1 truncate">
+        {{ latest.top3_oi_decrease or "-" }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Snapshots history table for current expiry -->
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase">
+        <tr>
+          <th class="px-3 py-2">รอบ</th>
+          <th class="px-3 py-2">เวลา (BKK)</th>
+          <th class="px-3 py-2">Spot ($)</th>
+          <th class="px-3 py-2">Max Pain ($)</th>
+          <th class="px-3 py-2">Top OI ($)</th>
+          <th class="px-3 py-2">Call #1 ($)</th>
+          <th class="px-3 py-2">Put #1 ($)</th>
+          <th class="px-3 py-2">OI รวม (BTC)</th>
+          <th class="px-3 py-2">OI เปลี่ยน (BTC)</th>
+          <th class="px-3 py-2">Net GEX ($)</th>
+          <th class="px-3 py-2">Gamma Flip ($)</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        {% for s in snaps_same_expiry %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white"><span class="px-1.5 py-0.5 rounded bg-slate-700">{{ s.label }}</span></td>
+          <td class="px-3 py-2 font-mono">{{ s.snapshot_time_bkk }}</td>
+          <td class="px-3 py-2 font-semibold text-white">${{ "{:,.2f}".format(s.index_price) }}</td>
+          <td class="px-3 py-2 text-amber-400 font-bold">${{ "{:,.0f}".format(s.max_pain) }}</td>
+          <td class="px-3 py-2 text-cyan-400">${{ "{:,.0f}".format(s.top_oi_strike) }}</td>
+          <td class="px-3 py-2 text-emerald-400">${{ "{:,.0f}".format(s.call1_strike) }}</td>
+          <td class="px-3 py-2 text-rose-400">${{ "{:,.0f}".format(s.put1_strike) }}</td>
+          <td class="px-3 py-2">{{ "{:,.1f}".format(s.total_oi) }}</td>
+          <td class="px-3 py-2 {% if (s.total_oi_chg or 0) > 0 %}text-emerald-400{% elif (s.total_oi_chg or 0) < 0 %}text-rose-400{% endif %}">
+            {{ "{:+,.1f}".format(s.total_oi_chg) if s.total_oi_chg is not none else "-" }}
+          </td>
+          <td class="px-3 py-2">${{ "{:+,.0f}".format(s.net_gex_usd) if s.net_gex_usd is not none else "-" }}</td>
+          <td class="px-3 py-2">${{ "{:,.0f}".format(s.gamma_flip) if s.gamma_flip is not none else "-" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- 5. SECTION: สถิติสะสม HIT-RATE (STATS & ACCURACY) -->
+<!-- ====================================================================== -->
+<div class="bg-darkcard border border-darkborder rounded-2xl p-4 sm:p-5 shadow mb-6">
+  <div class="flex items-center justify-between pb-3 border-b border-darkborder mb-3">
+    <div class="flex items-center space-x-2">
+      <span class="text-lg">🎯</span>
+      <h3 class="text-base font-bold text-white">สถิติสะสม Hit-rate ของ Price Pinning (Historical Accuracy)</h3>
+    </div>
+    <span class="text-xs text-slate-400">จำนวนตัวอย่างสะสม n = {{ overall_stats.n if overall_stats else 0 }} Expiries</span>
+  </div>
+
+  {% if overall_stats %}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <!-- Reference Points Hit Rates -->
+    <div>
+      <div class="text-xs font-bold uppercase text-slate-400 mb-2">ตาราง Hit-rate แยกตามจุดอ้างอิง</div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left text-slate-300">
+          <thead class="text-slate-400 bg-slate-800/80 uppercase">
+            <tr>
+              <th class="px-3 py-2">จุดอ้างอิง</th>
+              <th class="px-3 py-2">เข้าเป้า ±0.5%</th>
+              <th class="px-3 py-2">เข้าเป้า ±1.0%</th>
+              <th class="px-3 py-2">ระยะห่างเฉลี่ย</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-darkborder/50">
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-3 py-2 font-bold text-amber-400">🎯 Max Pain Strike</td>
+              <td class="px-3 py-2 font-bold text-emerald-400">{{ overall_stats.max_pain.pct_05 }}%</td>
+              <td class="px-3 py-2 font-bold text-emerald-400">{{ overall_stats.max_pain.pct_1 }}%</td>
+              <td class="px-3 py-2">{{ overall_stats.max_pain.avg_dist }}%</td>
+            </tr>
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-3 py-2 font-bold text-cyan-400">📊 Top OI Strike รวม</td>
+              <td class="px-3 py-2 font-bold text-emerald-400">{{ overall_stats.top_oi.pct_05 }}%</td>
+              <td class="px-3 py-2 font-bold text-emerald-400">{{ overall_stats.top_oi.pct_1 }}%</td>
+              <td class="px-3 py-2">{{ overall_stats.top_oi.avg_dist }}%</td>
+            </tr>
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-3 py-2 font-bold text-emerald-400">🛡️ Call #1 (C1 Wall)</td>
+              <td class="px-3 py-2">{{ overall_stats.call1.pct_05 }}%</td>
+              <td class="px-3 py-2">{{ overall_stats.call1.pct_1 }}%</td>
+              <td class="px-3 py-2">{{ overall_stats.call1.avg_dist }}%</td>
+            </tr>
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-3 py-2 font-bold text-rose-400">🛡️ Put #1 (P1 Wall)</td>
+              <td class="px-3 py-2">{{ overall_stats.put1.pct_05 }}%</td>
+              <td class="px-3 py-2">{{ overall_stats.put1.pct_1 }}%</td>
+              <td class="px-3 py-2">{{ overall_stats.put1.avg_dist }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- P1-C1 Range & Event Comparison -->
+    <div>
+      <div class="text-xs font-bold uppercase text-slate-400 mb-2">สถิติการ Settle ในกรอบ P1–C1 & ผลกระทบ Event</div>
+      <div class="grid grid-cols-2 gap-2 text-center text-xs mb-3">
+        <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
+          <div class="text-slate-400">% Settle ในกรอบ P1–C1</div>
+          <div class="text-xl font-bold text-emerald-400 mt-1">{{ overall_stats.range.in_range_pct }}%</div>
+        </div>
+        <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
+          <div class="text-slate-400">ความกว้างเฉลี่ยของกรอบ</div>
+          <div class="text-xl font-bold text-white mt-1">{{ overall_stats.range.avg_width }}%</div>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left text-slate-300">
+          <thead class="text-slate-400 bg-slate-800/80 uppercase">
+            <tr>
+              <th class="px-2.5 py-1.5">เงื่อนไข Event</th>
+              <th class="px-2.5 py-1.5">MP ±0.5%</th>
+              <th class="px-2.5 py-1.5">MP ±1.0%</th>
+              <th class="px-2.5 py-1.5">ในกรอบ P1-C1</th>
+              <th class="px-2.5 py-1.5">n</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-darkborder/50">
+            <tr>
+              <td class="px-2.5 py-1.5 text-rose-300 font-semibold">⚠️ มี High Event</td>
+              <td class="px-2.5 py-1.5">{{ with_events_stats.max_pain.pct_05 if with_events_stats else "-" }}%</td>
+              <td class="px-2.5 py-1.5">{{ with_events_stats.max_pain.pct_1 if with_events_stats else "-" }}%</td>
+              <td class="px-2.5 py-1.5">{{ with_events_stats.range.in_range_pct if with_events_stats else "-" }}%</td>
+              <td class="px-2.5 py-1.5">{{ with_events_stats.n if with_events_stats else 0 }}</td>
+            </tr>
+            <tr>
+              <td class="px-2.5 py-1.5 text-emerald-300 font-semibold">🛡️ ไม่มี Event</td>
+              <td class="px-2.5 py-1.5">{{ no_events_stats.max_pain.pct_05 if no_events_stats else "-" }}%</td>
+              <td class="px-2.5 py-1.5">{{ no_events_stats.max_pain.pct_1 if no_events_stats else "-" }}%</td>
+              <td class="px-2.5 py-1.5">{{ no_events_stats.range.in_range_pct if no_events_stats else "-" }}%</td>
+              <td class="px-2.5 py-1.5">{{ no_events_stats.n if no_events_stats else 0 }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ====================================================================== -->
+<!-- 6. SECTION: ผล SETTLE ย้อนหลัง (RESULTS HISTORY) -->
+<!-- ====================================================================== -->
+<div class="bg-darkcard border border-darkborder rounded-2xl p-4 sm:p-5 shadow mb-6">
+  <div class="flex items-center justify-between pb-3 border-b border-darkborder mb-3">
+    <div class="flex items-center space-x-2">
+      <span class="text-lg">🏆</span>
+      <h3 class="text-base font-bold text-white">ตารางผล Settle ย้อนหลังทุก Expiry (Settlement Results History)</h3>
+    </div>
+    <a href="/export/results.csv" class="text-xs text-blue-400 hover:text-blue-300">📥 Export Results CSV</a>
+  </div>
+
+  <div class="overflow-x-auto max-h-96">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase sticky top-0">
+        <tr>
+          <th class="px-3 py-2">Expiry Date</th>
+          <th class="px-3 py-2">ประเภท</th>
+          <th class="px-3 py-2">Settle Price ($)</th>
+          <th class="px-3 py-2">Snapshot ใช้</th>
+          <th class="px-3 py-2">Max Pain ($)</th>
+          <th class="px-3 py-2">ห่าง MP (%)</th>
+          <th class="px-3 py-2">Pin ±0.5%/±1%</th>
+          <th class="px-3 py-2">Top OI ($)</th>
+          <th class="px-3 py-2">กรอบ P1–C1 ($)</th>
+          <th class="px-3 py-2">ในกรอบ?</th>
+          <th class="px-3 py-2">Event</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        {% for r in results %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white">{{ r.expiry_date }}</td>
+          <td class="px-3 py-2"><span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-700 text-slate-300">{{ r.expiry_type or "daily" }}</span></td>
+          <td class="px-3 py-2 font-bold text-white">${{ "{:,.2f}".format(r.settlement_price) }}</td>
+          <td class="px-3 py-2 text-slate-400">{{ r.snapshot_used or "ไม่มี" }}</td>
+          <td class="px-3 py-2 text-amber-400 font-semibold">{{ "${:,.0f}".format(r.max_pain) if r.max_pain else "-" }}</td>
+          <td class="px-3 py-2 font-semibold {% if r.dist_max_pain_pct is not none and r.dist_max_pain_pct|abs <= 1.0 %}text-emerald-400{% else %}text-slate-300{% endif %}">
+            {{ "{:+.2f}%".format(r.dist_max_pain_pct) if r.dist_max_pain_pct is not none else "-" }}
+          </td>
+          <td class="px-3 py-2">
+            {% if r.max_pain %}
+              {% set w05 = r['[within_0.5pct_max_pain]'] or r['within_0.5pct_max_pain'] or 0 %}
+              {% set w1 = r['within_1pct_max_pain'] or 0 %}
+              {% if w05 %}
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-300 text-[10px] font-bold">🎯 ±0.5%</span>
+              {% elif w1 %}
+                <span class="px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 text-[10px] font-bold">✓ ±1.0%</span>
+              {% else %}
+                <span class="text-slate-500">✕</span>
+              {% endif %}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-cyan-400">{{ "${:,.0f}".format(r.top_oi_strike) if r.top_oi_strike else "-" }}</td>
+          <td class="px-3 py-2 text-slate-400">
+            {% if r.range_low and r.range_high %}
+              ${{ "{:,.0f}".format(r.range_low) }}–${{ "{:,.0f}".format(r.range_high) }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if r.settled_in_put1_call1_range is not none %}
+              {% if r.settled_in_put1_call1_range == 1 %}
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px]">อยู่ในกรอบ</span>
+              {% else %}
+                <span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px]">หลุด</span>
+              {% endif %}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if r.has_high_impact_event == 1 %}
+              <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-300 text-[10px] font-bold">⚠️ มี Event</span>
+            {% else %}
+              <span class="text-slate-500">ไม่มี</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- 7. SECTION: EXPIRY ขนาดใหญ่ & ข่าว/อีเวนต์ (BIG EXPIRIES & EVENTS) -->
+<!-- ====================================================================== -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+  <!-- Big Expiries Cards -->
+  <div class="bg-darkcard border border-darkborder rounded-2xl p-4 sm:p-5 shadow">
+    <div class="flex items-center justify-between pb-3 border-b border-darkborder mb-3">
+      <div class="flex items-center space-x-2">
+        <span class="text-lg">🗓️</span>
+        <h3 class="text-base font-bold text-white">Expiry ขนาดใหญ่ (Weekly / Monthly / Quarterly)</h3>
+      </div>
+      <a href="/export/big_expiries.csv" class="text-xs text-blue-400 hover:text-blue-300">📥 Export CSV</a>
+    </div>
+
+    <div class="space-y-3">
+      {% for b in big_expiries %}
+      <div class="bg-slate-900/80 p-3 rounded-xl border border-darkborder/50 text-xs">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold uppercase px-2 py-0.5 rounded {% if b.kind == 'weekly' %}bg-blue-500/20 text-blue-400 border border-blue-500/30{% elif b.kind == 'monthly' %}bg-purple-500/20 text-purple-400 border border-purple-500/30{% else %}bg-amber-500/20 text-amber-400 border border-amber-500/30{% endif %}">
+            {{ b.kind }} Expiry: {{ b.expiry_date }}
+          </span>
+          <span class="text-slate-400 font-mono">เหลือ {{ b.hours_to_expiry }} ชม.</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <div>
+            <div class="text-slate-400">Max Pain:</div>
+            <div class="font-bold text-amber-400">${{ "{:,.0f}".format(b.max_pain) }}</div>
+          </div>
+          <div>
+            <div class="text-slate-400">Top OI:</div>
+            <div class="font-bold text-cyan-400">${{ "{:,.0f}".format(b.top_oi_strike) }}</div>
+          </div>
+          <div>
+            <div class="text-slate-400">Total OI:</div>
+            <div class="font-bold text-white">{{ "{:,.0f}".format(b.total_oi) }} BTC</div>
+          </div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-slate-800 text-slate-400 flex justify-between text-[11px]">
+          <span>C1: ${{ "{:,.0f}".format(b.call1_strike) }}</span>
+          <span>P1: ${{ "{:,.0f}".format(b.put1_strike) }}</span>
+          <span>P/C: {{ b.put_call_oi_ratio }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Events Calendar & Crypto Form -->
+  <div class="bg-darkcard border border-darkborder rounded-2xl p-4 sm:p-5 shadow">
+    <div class="flex items-center justify-between pb-3 border-b border-darkborder mb-3">
+      <div class="flex items-center space-x-2">
+        <span class="text-lg">📢</span>
+        <h3 class="text-base font-bold text-white">ปฏิทินเศรษฐกิจ (ForexFactory USD High/Med) & อีเวนต์คริปโต</h3>
+      </div>
+      <a href="/export/events.csv" class="text-xs text-blue-400 hover:text-blue-300">📥 Export CSV</a>
+    </div>
+
+    <div class="overflow-y-auto max-h-80 space-y-2">
+      {% for ev in events[:12] %}
+      <div class="bg-slate-900/80 p-2.5 rounded-lg border border-darkborder/50 text-xs">
+        <div class="flex items-center justify-between mb-1">
+          <div class="flex items-center space-x-1.5">
+            <span class="px-1.5 py-0.2 rounded text-[10px] font-bold {% if ev.impact == 'High' %}bg-rose-500/30 text-rose-300 border border-rose-500/40{% elif ev.impact == 'Medium' %}bg-amber-500/30 text-amber-300 border border-amber-500/40{% else %}bg-slate-700 text-slate-300{% endif %}">
+              {{ ev.impact }}
+            </span>
+            <span class="font-bold text-white">{{ ev.time_bkk }}</span>
+            <span class="text-slate-400 text-[11px]">({{ ev.date }})</span>
+          </div>
+          <span class="text-[10px] text-slate-400 uppercase">{{ ev.source }}</span>
+        </div>
+        <div class="text-slate-200 truncate">{{ ev.event }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- JAVASCRIPT: TIMELINE ENGINE & LINKED CHART.JS -->
+<!-- ====================================================================== -->
+<script>
+  let timelineData = [];
+  let currentIndex = 0;
+  let isPlaying = false;
+  let playInterval = null;
+  let playSpeed = 1500;
+  let chartOI = null;
+  let chartGEX = null;
+
+  Chart.defaults.color = '#8fa0bd';
+  Chart.defaults.borderColor = '#1e2c4a';
+
+  // Vertical Lines Plugin for Current Spot & Max Pain
+  const verticalLinesPlugin = {
+    id: 'verticalLines',
+    afterDraw: (chart) => {
+      const snap = timelineData[currentIndex];
+      if (!snap) return;
+
+      const ctx = chart.ctx;
+      const xAxis = chart.scales.x;
+      const yAxis = chart.scales.y;
+      if (!xAxis || !yAxis) return;
+
+      const spot = snap.index_price;
+      const maxPain = snap.max_pain;
+
+      function getXForValue(val) {
+        const labels = chart.data.labels;
+        if (!labels || labels.length === 0) return null;
+        for (let i = 0; i < labels.length - 1; i++) {
+          const k1 = Number(labels[i]);
+          const k2 = Number(labels[i + 1]);
+          if (val >= k1 && val <= k2) {
+            const x1 = xAxis.getPixelForTick(i);
+            const x2 = xAxis.getPixelForTick(i + 1);
+            const ratio = (val - k1) / (k2 - k1);
+            return x1 + ratio * (x2 - x1);
+          }
+        }
+        if (val < Number(labels[0])) return xAxis.getPixelForTick(0);
+        if (val > Number(labels[labels.length - 1])) return xAxis.getPixelForTick(labels.length - 1);
+        return null;
+      }
+
+      ctx.save();
+
+      // Spot Line (Red dashed line + Header Badge)
+      const spotX = getXForValue(spot);
+      if (spotX !== null) {
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.moveTo(spotX, yAxis.top);
+        ctx.lineTo(spotX, yAxis.bottom);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 10px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Current ${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`, spotX, yAxis.top - 4);
+      }
+
+      // Max Pain Line (Amber dashed line)
+      const mpX = getXForValue(maxPain);
+      if (mpX !== null && Math.abs(mpX - (spotX || 0)) > 24) {
+        ctx.beginPath();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.2;
+        ctx.moveTo(mpX, yAxis.top);
+        ctx.lineTo(mpX, yAxis.bottom);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = 'bold 10px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Max Pain ${Number(maxPain).toLocaleString()}`, mpX, yAxis.top + 14);
+      }
+
+      ctx.restore();
+    }
+  };
+
+  // Initialize Dual Charts: Panel 1 (OI) & Panel 2 (GEX directly below)
+  function initCharts() {
+    // 1. OI Chart (Call = Green, Put = Red)
+    const ctxOI = document.getElementById('oiChart').getContext('2d');
+    chartOI = new Chart(ctxOI, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Call OI (BTC)',
+            data: [],
+            backgroundColor: '#10b981', // GREEN for Call
+            borderColor: '#059669',
+            borderWidth: 0,
+            borderRadius: 3,
+            yAxisID: 'y',
+            order: 2
+          },
+          {
+            type: 'bar',
+            label: 'Put OI (BTC)',
+            data: [],
+            backgroundColor: '#f43f5e', // RED for Put
+            borderColor: '#e11d48',
+            borderWidth: 0,
+            borderRadius: 3,
+            yAxisID: 'y',
+            order: 3
+          },
+          {
+            type: 'line',
+            label: 'IV (Smile %)',
+            data: [],
+            borderColor: '#f472b6', // Pink dashed line
+            borderWidth: 2,
+            borderDash: [5, 4],
+            pointBackgroundColor: '#f472b6',
+            pointBorderColor: '#ffffff',
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            fill: false,
+            tension: 0.25,
+            yAxisID: 'y1',
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 250 },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0c162b',
+            titleColor: '#ffffff',
+            borderColor: '#2a3b5e',
+            borderWidth: 1,
+            callbacks: {
+              title: (items) => `Strike: $${Number(items[0].label).toLocaleString()}`,
+              label: (item) => {
+                if (item.dataset.label.includes('IV')) return `IV: ${item.raw ? Number(item.raw).toFixed(1) + '%' : '-'}`;
+                return `${item.dataset.label}: ${Number(item.raw).toLocaleString()} BTC`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14, font: { size: 10, weight: 'bold' } } },
+          y: { position: 'left', grid: { color: 'rgba(30, 44, 74, 0.6)' }, title: { display: true, text: 'Open Interest (BTC)', font: { size: 10, weight: 'bold' } } },
+          y1: { position: 'right', grid: { display: false }, title: { display: true, text: 'IV (%)', font: { size: 10, weight: 'bold' }, color: '#f472b6' }, ticks: { color: '#f472b6' }, min: 10, max: 90 }
+        }
+      },
+      plugins: [verticalLinesPlugin]
+    });
+
+    // 2. GEX Chart (Immediately Below OI Chart, perfectly aligned on X-axis)
+    const ctxGEX = document.getElementById('gexChart').getContext('2d');
+    chartGEX = new Chart(ctxGEX, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            type: 'line',
+            label: 'Net GEX ($/1%)',
+            data: [],
+            borderColor: '#38bdf8', // Bright Sky Blue
+            borderWidth: 2,
+            pointRadius: 2,
+            pointHoverRadius: 4,
+            fill: false,
+            tension: 0.1,
+            order: 1
+          },
+          {
+            label: 'Call GEX ($)',
+            data: [],
+            backgroundColor: 'rgba(16, 185, 129, 0.6)', // Green Call GEX
+            order: 2
+          },
+          {
+            label: 'Put GEX ($)',
+            data: [],
+            backgroundColor: 'rgba(244, 63, 94, 0.6)', // Red Put GEX
+            order: 3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 250 },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0c162b',
+            titleColor: '#ffffff',
+            borderColor: '#2a3b5e',
+            borderWidth: 1,
+            callbacks: {
+              title: (items) => `Strike: $${Number(items[0].label).toLocaleString()}`,
+              label: (item) => `${item.dataset.label}: $${Number(item.raw).toLocaleString()}`
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 14, font: { size: 10, weight: 'bold' } } },
+          y: { grid: { color: 'rgba(30, 44, 74, 0.6)' }, title: { display: true, text: 'USD / 1% move', font: { size: 10 } } }
+        }
+      }
+    });
+  }
+
+  // Load timeline data
+  async function loadTimeline(expiryDate = null) {
+    let url = '/api/timeline';
+    if (expiryDate && expiryDate !== 'all') {
+      url += `?expiry_date=${expiryDate}`;
+    }
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      timelineData = data.snapshots || [];
+
+      const picker = document.getElementById('expiryPicker');
+      if (picker.options.length <= 1) {
+        picker.innerHTML = '<option value="all">🌐 รวมทุก Expiry ในอนาคต (All Aggregated)</option>';
+        (data.expiries || []).forEach(e => {
+          const opt = document.createElement('option');
+          opt.value = e.expiry_date;
+          let tag = e.expiry_type || '';
+          if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • วันนี้';
+          else if (e.expiry_type === 'monthly') tag += ' • สิ้นเดือน';
+          else if (e.expiry_type === 'quarterly') tag += ' • ไตรมาส';
+          else if (e.expiry_type === 'weekly') tag += ' • ศุกร์';
+          opt.textContent = `${e.expiry_date} (${tag}) • ${e.snap_count} รอบ`;
+          picker.appendChild(opt);
+        });
+        if (expiryDate) picker.value = expiryDate;
+      }
+
+      const slider = document.getElementById('timelineSlider');
+      if (timelineData.length > 0) {
+        slider.min = 0;
+        slider.max = timelineData.length - 1;
+        currentIndex = timelineData.length - 1; // start at latest
+        slider.value = currentIndex;
+        renderFrame(currentIndex);
+      }
+    } catch (err) {
+      console.error('Failed to load timeline:', err);
+    }
+  }
+
+  // Render a specific frame
+  function renderFrame(idx) {
+    if (!timelineData || timelineData.length === 0 || idx < 0 || idx >= timelineData.length) return;
+    const snap = timelineData[idx];
+
+    // 1. Slider & Time Badge
+    document.getElementById('timelineSlider').value = idx;
+    document.getElementById('timeBadge').textContent = `${snap.snapshot_time_bkk} (รอบ ${snap.label})`;
+    const subheader = document.getElementById('oiSubheader');
+    if (subheader) {
+      subheader.textContent = `Expiry: ${snap.expiry_date} (${snap.expiry_type || 'all'})`;
+    }
+
+    // 2. Header Metrics
+    document.getElementById('headPutOI').textContent = Number(snap.total_put_oi).toLocaleString(undefined, {maximumFractionDigits: 0});
+    document.getElementById('headCallOI').textContent = Number(snap.total_call_oi).toLocaleString(undefined, {maximumFractionDigits: 0});
+    document.getElementById('headPC').textContent = snap.put_call_oi_ratio;
+
+    const spot = snap.index_price;
+    document.getElementById('headSpot').textContent = `$${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`;
+
+    const mp = snap.max_pain;
+    document.getElementById('headMaxPain').textContent = `$${Number(mp).toLocaleString()}`;
+    document.getElementById('headDTE').textContent = `${(snap.hours_to_expiry / 24.0).toFixed(2)}d`;
+    document.getElementById('headIV').textContent = snap.atm_iv ? `${snap.atm_iv}%` : '-';
+
+    const netGex = snap.net_gex_usd || 0;
+    const gexEl = document.getElementById('headGEX');
+    gexEl.textContent = `$${Number(netGex / 1000000).toFixed(1)}M`;
+    gexEl.className = `font-bold ${netGex >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+    // 3. Sub-bar Badges
+    const c1 = snap.call1_strike;
+    const p1 = snap.put1_strike;
+    const c1Pct = ((c1 - spot) / spot * 100).toFixed(2);
+    const p1Pct = ((p1 - spot) / spot * 100).toFixed(2);
+    document.getElementById('badgeC1').textContent = `C1: $${Number(c1).toLocaleString()} (${c1Pct >= 0 ? '+' : ''}${c1Pct}%)`;
+    document.getElementById('badgeP1').textContent = `P1: $${Number(p1).toLocaleString()} (${p1Pct >= 0 ? '+' : ''}${p1Pct}%)`;
+
+    const rangeWidth = (((c1 - p1) / p1) * 100).toFixed(2);
+    document.getElementById('badgeRangeWidth').textContent = `กรอบ P1–C1: ${rangeWidth}% ($${Number(p1).toLocaleString()} – $${Number(c1).toLocaleString()})`;
+
+    const flip = snap.gamma_flip;
+    document.getElementById('badgeFlip').textContent = flip ? `Flip: $${Number(flip).toLocaleString()}` : 'Flip: N/A';
+
+    // 4. Update Both Charts with matching labels
+    const strikes = snap.strikes || [];
+    const labels = strikes.map(s => s.strike);
+    const callOI = strikes.map(s => s.call_oi);
+    const putOI = strikes.map(s => s.put_oi);
+
+    const ivCurve = strikes.map(s => {
+      const civ = s.call_iv;
+      const piv = s.put_iv;
+      if (civ && piv) return (civ + piv) / 2.0;
+      return civ || piv || null;
+    });
+
+    chartOI.data.labels = labels;
+    chartOI.data.datasets[0].data = callOI; // Green
+    chartOI.data.datasets[1].data = putOI;  // Red
+    chartOI.data.datasets[2].data = ivCurve;
+    chartOI.update('none');
+
+    const callGEX = strikes.map(s => s.call_gex_usd || 0);
+    const putGEX = strikes.map(s => s.put_gex_usd || 0);
+    const netGEXArr = strikes.map(s => s.net_gex_usd || 0);
+
+    chartGEX.data.labels = labels;
+    chartGEX.data.datasets[0].data = netGEXArr;
+    chartGEX.data.datasets[1].data = callGEX;
+    chartGEX.data.datasets[2].data = putGEX;
+    chartGEX.update('none');
+  }
+
+  function onSliderChange(val) {
+    currentIndex = parseInt(val, 10);
+    renderFrame(currentIndex);
+  }
+
+  function togglePlay() {
+    if (isPlaying) {
+      pausePlayback();
+    } else {
+      startPlayback();
+    }
+  }
+
+  function startPlayback() {
+    isPlaying = true;
+    document.getElementById('playIcon').textContent = '⏸️';
+    document.getElementById('playText').textContent = 'หยุด';
+    if (currentIndex >= timelineData.length - 1) {
+      currentIndex = 0;
+      renderFrame(currentIndex);
+    }
+    playInterval = setInterval(() => {
+      if (currentIndex < timelineData.length - 1) {
+        currentIndex++;
+        renderFrame(currentIndex);
+      } else {
+        pausePlayback();
+      }
+    }, playSpeed);
+  }
+
+  function pausePlayback() {
+    isPlaying = false;
+    clearInterval(playInterval);
+    document.getElementById('playIcon').textContent = '▶️';
+    document.getElementById('playText').textContent = 'เล่น';
+  }
+
+  function stepNext() {
+    pausePlayback();
+    if (currentIndex < timelineData.length - 1) {
+      currentIndex++;
+      renderFrame(currentIndex);
+    }
+  }
+
+  function stepPrev() {
+    pausePlayback();
+    if (currentIndex > 0) {
+      currentIndex--;
+      renderFrame(currentIndex);
+    }
+  }
+
+  function changeSpeed(val) {
+    playSpeed = parseInt(val, 10);
+    if (isPlaying) {
+      pausePlayback();
+      startPlayback();
+    }
+  }
+
+  function selectGrouping(type) {
+    pausePlayback();
+    ['grpToday', 'grpWeekly', 'grpMonthly', 'grpAll'].forEach(id => {
+      document.getElementById(id).className = 'px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white';
+    });
+
+    const picker = document.getElementById('expiryPicker');
+    const todayStr = '{{ snap.expiry_date }}';
+
+    if (type === 'today') {
+      document.getElementById('grpToday').className = 'px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      picker.value = todayStr;
+      loadTimeline(todayStr);
+    } else if (type === 'weekly') {
+      document.getElementById('grpWeekly').className = 'px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40';
+      let weeklyVal = '2026-10-30';
+      for (let i = 0; i < picker.options.length; i++) {
+        const val = picker.options[i].value;
+        const txt = picker.options[i].text.toLowerCase();
+        if (val >= todayStr && (txt.includes('weekly') || txt.includes('ศุกร์') || val === '2026-10-30')) {
+          weeklyVal = val;
+          break;
+        }
+      }
+      picker.value = weeklyVal;
+      loadTimeline(weeklyVal);
+    } else if (type === 'monthly') {
+      document.getElementById('grpMonthly').className = 'px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40';
+      let monthlyVal = '2026-10-30';
+      for (let i = 0; i < picker.options.length; i++) {
+        const val = picker.options[i].value;
+        const txt = picker.options[i].text.toLowerCase();
+        if (val >= todayStr && (txt.includes('monthly') || txt.includes('สิ้นเดือน'))) {
+          monthlyVal = val;
+          break;
+        }
+      }
+      picker.value = monthlyVal;
+      loadTimeline(monthlyVal);
+    } else if (type === 'all') {
+      document.getElementById('grpAll').className = 'px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      picker.value = 'all';
+      loadTimeline('all');
+    }
+  }
+
+  function onExpiryChange(val) {
+    pausePlayback();
+    loadTimeline(val);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initCharts();
+    loadTimeline('{{ snap.expiry_date }}');
+  });
+</script>
+{% endif %}
+{% endblock %}
