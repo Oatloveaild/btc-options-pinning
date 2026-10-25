@@ -532,7 +532,7 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
         "next_jobs": [
             {
                 "id": j.id,
-                "label": "15:30 (Settle วันนี้ & Snapshot พรุ่งนี้)" if "1530" in j.id else ("21:00 (Snapshot พรุ่งนี้)" if "2100" in j.id else "06:00 (Snapshot วันนี้)"),
+                "label": "15:30 (Settle วันนี้ & Snapshot พรุ่งนี้)" if "1530" in j.id else ("21:00 (Snapshot พรุ่งนี้)" if "2100" in j.id else ("06:00 (Snapshot วันนี้)" if "0600" in j.id else "Snapshot รายชั่วโมง")),
                 "next_run": j.next_run_time.strftime("%d/%m %H:%M น.") if j.next_run_time else "-"
             }
             for j in sorted(scheduler.get_jobs(), key=lambda x: x.next_run_time or datetime.max)
