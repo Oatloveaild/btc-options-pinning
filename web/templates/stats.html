@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}สถิติสะสม (Stats & Hit-rate) - BTC Options Pinning{% endblock %}
+
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+      <span>🎯 สถิติสะสม Hit-rate ของ Price Pinning</span>
+    </h1>
+    <div class="text-xs text-slate-400 mt-1">
+      วิเคราะห์ความถี่ที่ราคา Settle วิ่งเข้าหาจุดอ้างอิงต่างๆ (Max Pain, Top OI, C1, P1, Gamma Flip) พร้อมแจกแจงตามประเภท Expiry และวันที่มี Event
+    </div>
+  </div>
+  <div>
+    <a href="/export/results.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      📥 Export Results CSV
+    </a>
+  </div>
+</div>
+
+{% if not overall %}
+<div class="mt-6 bg-darkcard border border-darkborder rounded-xl p-8 text-center text-slate-400">
+  <div class="text-3xl mb-2">📊</div>
+  <p>ยังไม่มีข้อมูลสถิติผล Settle ที่มี Snapshot เพียงพอสำหรับการคำนวณ</p>
+</div>
+{% else %}
+
+<!-- Main Hit-Rate Table by Reference Point -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="flex items-center justify-between mb-3">
+    <div class="text-xs font-bold uppercase text-slate-400 tracking-wider">
+      1. ตาราง Hit-rate แยกตามจุดอ้างอิง (Overall Reference Points) — ตัวอย่างทั้งหมด n = {{ overall.n }}
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left text-slate-300">
+      <thead class="text-xs text-slate-400 bg-slate-800/80 uppercase">
+        <tr>
+          <th class="px-4 py-2.5">จุดอ้างอิง (Reference Target)</th>
+          <th class="px-4 py-2.5">เข้ากรอบ ±0.5% (Hit Rate)</th>
+          <th class="px-4 py-2.5">เข้ากรอบ ±1.0% (Hit Rate)</th>
+          <th class="px-4 py-2.5">ระยะห่างเฉลี่ยจาก Settle</th>
+          <th class="px-4 py-2.5">จำนวนตัวอย่าง (n)</th>
+          <th class="px-4 py-2.5">ความหมายเชิงเทรด</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        <!-- Max Pain -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-amber-400 flex items-center gap-1.5">
+            <span>🎯 Max Pain Strike</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.max_pain.pct_05 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.max_pain.pct_1 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.max_pain.avg_dist }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.n }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">จุดที่ผู้ซื้อ Option เสียเงินมากสุด</td>
+        </tr>
+
+        <!-- Top OI Strike -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-cyan-400 flex items-center gap-1.5">
+            <span>📊 Top OI Strike รวม</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.top_oi.pct_05 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.top_oi.pct_1 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.top_oi.avg_dist }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.n }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">Strike ที่มีสัญญาเปิดมากที่สุด</td>
+        </tr>
+
+        <!-- Call #1 -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-emerald-400 flex items-center gap-1.5">
+            <span>🛡️ Call #1 (Call Wall)</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call1.pct_05 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call1.pct_1 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.call1.avg_dist }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.n }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Call สูงสุด (แนวต้าน)</td>
+        </tr>
+
+        <!-- Put #1 -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-rose-400 flex items-center gap-1.5">
+            <span>🛡️ Put #1 (Put Wall)</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put1.pct_05 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put1.pct_1 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.put1.avg_dist }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.n }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Put สูงสุด (แนวรับ)</td>
+        </tr>
+
+        <!-- Gamma Flip -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-purple-400 flex items-center gap-1.5">
+            <span>⚡ Gamma Flip Level</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.gamma_flip.pct_05 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.gamma_flip.pct_1 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.gamma_flip.avg_dist }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.gamma_flip.n_flip }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">จุดเปลี่ยนสมดุล Dealer Gamma</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Range Pinning and Breakdown Grids -->
+<div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+  <!-- P1-C1 Range Stats -->
+  <div class="bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+    <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+      2. สถิติการ Settle ในกรอบ Put #1 ถึง Call #1 (P1–C1 Range)
+    </div>
+    <div class="grid grid-cols-2 gap-3 mt-3">
+      <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50 text-center">
+        <div class="text-xs text-slate-400">% ที่ Settle อยู่ในกรอบ</div>
+        <div class="text-2xl font-bold text-emerald-400 mt-1">{{ overall.range.in_range_pct }}%</div>
+        <div class="text-[11px] text-slate-400 mt-1">จำนวน n = {{ overall.range.n_range }}</div>
+      </div>
+      <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50 text-center">
+        <div class="text-xs text-slate-400">ความกว้างเฉลี่ยของกรอบ</div>
+        <div class="text-2xl font-bold text-white mt-1">{{ overall.range.avg_width }}%</div>
+        <div class="text-[11px] text-slate-400 mt-1">ความกว้างระหว่าง P1 และ C1</div>
+      </div>
+    </div>
+    <p class="text-xs text-slate-400 mt-3 leading-relaxed">
+      💡 <strong>Insight:</strong> ถ้า Settle อยู่ในกรอบ P1–C1 บ่อยครั้ง แสดงว่ากำแพง Call/Put ของดีลเลอร์ทำหน้าที่เป็น Channel ตรึงราคาได้อย่างมีประสิทธิภาพ
+    </p>
+  </div>
+
+  <!-- Breakdown by Event Presence -->
+  <div class="bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+    <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+      3. เปรียบเทียบวันที่มี vs ไม่มี High-Impact Event
+    </div>
+    <div class="overflow-x-auto mt-2">
+      <table class="w-full text-xs text-left text-slate-300">
+        <thead class="text-slate-400 bg-slate-800/80 uppercase">
+          <tr>
+            <th class="px-3 py-2">เงื่อนไข Event (06:00–15:00)</th>
+            <th class="px-3 py-2">MP ±0.5%</th>
+            <th class="px-3 py-2">MP ±1.0%</th>
+            <th class="px-3 py-2">ในกรอบ P1-C1</th>
+            <th class="px-3 py-2">n</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-darkborder/50">
+          <tr class="hover:bg-slate-800/40">
+            <td class="px-3 py-2 text-rose-300 font-semibold">⚠️ มี High-Impact Event</td>
+            <td class="px-3 py-2">{{ with_events.max_pain.pct_05 if with_events else "-" }}%</td>
+            <td class="px-3 py-2">{{ with_events.max_pain.pct_1 if with_events else "-" }}%</td>
+            <td class="px-3 py-2">{{ with_events.range.in_range_pct if with_events else "-" }}%</td>
+            <td class="px-3 py-2 text-slate-400">{{ with_events.n if with_events else 0 }}</td>
+          </tr>
+          <tr class="hover:bg-slate-800/40">
+            <td class="px-3 py-2 text-emerald-300 font-semibold">🛡️ ไม่มี High-Impact Event</td>
+            <td class="px-3 py-2">{{ no_events.max_pain.pct_05 if no_events else "-" }}%</td>
+            <td class="px-3 py-2">{{ no_events.max_pain.pct_1 if no_events else "-" }}%</td>
+            <td class="px-3 py-2">{{ no_events.range.in_range_pct if no_events else "-" }}%</td>
+            <td class="px-3 py-2 text-slate-400">{{ no_events.n if no_events else 0 }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Breakdown by Expiry Type -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+    4. จำแนก Hit-rate ตามประเภท Expiry (Daily vs Weekly vs Monthly)
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase">
+        <tr>
+          <th class="px-3 py-2">ประเภท Expiry</th>
+          <th class="px-3 py-2">Max Pain ±0.5%</th>
+          <th class="px-3 py-2">Max Pain ±1.0%</th>
+          <th class="px-3 py-2">Top OI ±0.5%</th>
+          <th class="px-3 py-2">Top OI ±1.0%</th>
+          <th class="px-3 py-2">อยู่ในกรอบ P1–C1</th>
+          <th class="px-3 py-2">ระยะห่างเฉลี่ย MP</th>
+          <th class="px-3 py-2">จำนวน n</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white">Daily Expiry</td>
+          <td class="px-3 py-2">{{ daily.max_pain.pct_05 if daily else "-" }}%</td>
+          <td class="px-3 py-2">{{ daily.max_pain.pct_1 if daily else "-" }}%</td>
+          <td class="px-3 py-2">{{ daily.top_oi.pct_05 if daily else "-" }}%</td>
+          <td class="px-3 py-2">{{ daily.top_oi.pct_1 if daily else "-" }}%</td>
+          <td class="px-3 py-2">{{ daily.range.in_range_pct if daily else "-" }}%</td>
+          <td class="px-3 py-2">{{ daily.max_pain.avg_dist if daily else "-" }}%</td>
+          <td class="px-3 py-2 text-slate-400">{{ daily.n if daily else 0 }}</td>
+        </tr>
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-blue-400">Weekly Expiry (ศุกร์)</td>
+          <td class="px-3 py-2">{{ weekly.max_pain.pct_05 if weekly else "-" }}%</td>
+          <td class="px-3 py-2">{{ weekly.max_pain.pct_1 if weekly else "-" }}%</td>
+          <td class="px-3 py-2">{{ weekly.top_oi.pct_05 if weekly else "-" }}%</td>
+          <td class="px-3 py-2">{{ weekly.top_oi.pct_1 if weekly else "-" }}%</td>
+          <td class="px-3 py-2">{{ weekly.range.in_range_pct if weekly else "-" }}%</td>
+          <td class="px-3 py-2">{{ weekly.max_pain.avg_dist if weekly else "-" }}%</td>
+          <td class="px-3 py-2 text-slate-400">{{ weekly.n if weekly else 0 }}</td>
+        </tr>
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-purple-400">Monthly / Quarterly</td>
+          <td class="px-3 py-2">{{ monthly.max_pain.pct_05 if monthly else "-" }}%</td>
+          <td class="px-3 py-2">{{ monthly.max_pain.pct_1 if monthly else "-" }}%</td>
+          <td class="px-3 py-2">{{ monthly.top_oi.pct_05 if monthly else "-" }}%</td>
+          <td class="px-3 py-2">{{ monthly.top_oi.pct_1 if monthly else "-" }}%</td>
+          <td class="px-3 py-2">{{ monthly.range.in_range_pct if monthly else "-" }}%</td>
+          <td class="px-3 py-2">{{ monthly.max_pain.avg_dist if monthly else "-" }}%</td>
+          <td class="px-3 py-2 text-slate-400">{{ monthly.n if monthly else 0 }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Distribution Chart -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+    5. การกระจายตัวของระยะห่าง (%) ระหว่างราคา Settle กับ Max Pain
+  </div>
+  <div class="h-64 w-full">
+    <canvas id="distChart"></canvas>
+  </div>
+</div>
+
+<script>
+  const mpDists = {{ mp_distances | tojson }};
+
+  // Binning function for distribution histogram
+  const bins = {
+    '<= -2%': 0,
+    '-2% to -1%': 0,
+    '-1% to -0.5%': 0,
+    '-0.5% to +0.5% (🎯)': 0,
+    '+0.5% to +1%': 0,
+    '+1% to +2%': 0,
+    '> +2%': 0,
+  };
+
+  mpDists.forEach(d => {
+    if (d <= -2.0) bins['<= -2%']++;
+    else if (d <= -1.0) bins['-2% to -1%']++;
+    else if (d <= -0.5) bins['-1% to -0.5%']++;
+    else if (d <= 0.5) bins['-0.5% to +0.5% (🎯)']++;
+    else if (d <= 1.0) bins['+0.5% to +1%']++;
+    else if (d <= 2.0) bins['+1% to +2%']++;
+    else bins['> +2%']++;
+  });
+
+  const ctxDist = document.getElementById('distChart').getContext('2d');
+  new Chart(ctxDist, {
+    type: 'bar',
+    data: {
+      labels: Object.keys(bins),
+      datasets: [{
+        label: 'จำนวนครั้งที่ Settle ในช่วงนี้ (ความถี่)',
+        data: Object.values(bins),
+        backgroundColor: [
+          'rgba(244, 63, 94, 0.6)',
+          'rgba(251, 146, 60, 0.6)',
+          'rgba(250, 204, 21, 0.6)',
+          'rgba(16, 185, 129, 0.85)', // Central Pinning Target
+          'rgba(250, 204, 21, 0.6)',
+          'rgba(251, 146, 60, 0.6)',
+          'rgba(244, 63, 94, 0.6)'
+        ],
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: {
+          grid: { color: 'rgba(51, 65, 85, 0.5)' },
+          ticks: { stepSize: 1 },
+          title: { display: true, text: 'จำนวน Expiry' }
+        }
+      }
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}
