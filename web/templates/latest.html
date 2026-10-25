@@ -693,18 +693,27 @@
       function getXForValue(val) {
         const labels = chart.data.labels;
         if (!labels || labels.length === 0) return null;
+
+        // Exact match
+        const exactIdx = labels.findIndex(l => Math.abs(Number(l) - Number(val)) < 0.001);
+        if (exactIdx !== -1) {
+          return xAxis.getPixelForValue(exactIdx);
+        }
+
+        // Interpolation between strikes
         for (let i = 0; i < labels.length - 1; i++) {
           const k1 = Number(labels[i]);
           const k2 = Number(labels[i + 1]);
           if (val >= k1 && val <= k2) {
-            const x1 = xAxis.getPixelForTick(i);
-            const x2 = xAxis.getPixelForTick(i + 1);
+            const x1 = xAxis.getPixelForValue(i);
+            const x2 = xAxis.getPixelForValue(i + 1);
+            if (x1 === null || x2 === null || isNaN(x1) || isNaN(x2)) return null;
             const ratio = (val - k1) / (k2 - k1);
             return x1 + ratio * (x2 - x1);
           }
         }
-        if (val < Number(labels[0])) return xAxis.getPixelForTick(0);
-        if (val > Number(labels[labels.length - 1])) return xAxis.getPixelForTick(labels.length - 1);
+        if (val < Number(labels[0])) return xAxis.getPixelForValue(0);
+        if (val > Number(labels[labels.length - 1])) return xAxis.getPixelForValue(labels.length - 1);
         return null;
       }
 
@@ -729,7 +738,7 @@
 
       // Max Pain Line (Amber dashed line)
       const mpX = getXForValue(maxPain);
-      if (mpX !== null && Math.abs(mpX - (spotX || 0)) > 24) {
+      if (mpX !== null) {
         ctx.beginPath();
         ctx.setLineDash([3, 3]);
         ctx.strokeStyle = '#f59e0b';
