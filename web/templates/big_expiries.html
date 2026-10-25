@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Expiry ขนาดใหญ่ (Big Expiries) - BTC Options Pinning{% endblock %}
+
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+      <span>🗓️ Expiry ขนาดใหญ่ (Weekly, Monthly, Quarterly)</span>
+    </h1>
+    <div class="text-xs text-slate-400 mt-1">
+      ติดตามการกระจุกตัวของ Open Interest และ Max Pain ใน Expiry รอบใหญ่ที่กำลังจะมาถึง (Snapshot ล่าสุด: {{ snap_time or 'ไม่มีข้อมูล' }})
+    </div>
+  </div>
+  <div>
+    <a href="/export/big_expiries.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      📥 Export Big Expiries CSV
+    </a>
+  </div>
+</div>
+
+{% if not records %}
+<div class="mt-6 bg-darkcard border border-darkborder rounded-xl p-8 text-center text-slate-400">
+  <div class="text-3xl mb-2">🗓️</div>
+  <p>ยังไม่มีข้อมูล Big Expiries ในระบบ</p>
+</div>
+{% else %}
+
+<!-- Big Expiries Cards Grid -->
+<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+  {% for r in records %}
+  <div class="bg-darkcard border border-darkborder rounded-xl p-5 shadow flex flex-col justify-between">
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-bold uppercase px-2.5 py-0.5 rounded {% if r.kind == 'weekly' %}bg-blue-500/20 text-blue-400 border border-blue-500/30{% elif r.kind == 'monthly' %}bg-purple-500/20 text-purple-400 border border-purple-500/30{% else %}bg-amber-500/20 text-amber-400 border border-amber-500/30{% endif %}">
+          {{ r.kind }} Expiry
+        </span>
+        <span class="text-xs text-slate-400 font-semibold">{{ r.expiry_date }}</span>
+      </div>
+      <div class="text-xs text-slate-400 mb-3">
+        หมดอายุ: {{ r.expiry_time_bkk }} (เหลือ {{ r.hours_to_expiry }} ชม.)
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">Max Pain:</span>
+          <span class="font-bold text-amber-400 text-sm">${{ "{:,.0f}".format(r.max_pain) }}</span>
+        </div>
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">Top OI Strike:</span>
+          <span class="font-bold text-cyan-400 text-sm">${{ "{:,.0f}".format(r.top_oi_strike) }}</span>
+        </div>
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">Call #1 (C1):</span>
+          <span class="font-semibold text-emerald-400">${{ "{:,.0f}".format(r.call1_strike) }} ({{ "{:,.0f}".format(r.call1_oi) }} BTC)</span>
+        </div>
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">Put #1 (P1):</span>
+          <span class="font-semibold text-rose-400">${{ "{:,.0f}".format(r.put1_strike) }} ({{ "{:,.0f}".format(r.put1_oi) }} BTC)</span>
+        </div>
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">Total OI (BTC):</span>
+          <span class="font-bold text-white text-sm">{{ "{:,.1f}".format(r.total_oi) }} BTC</span>
+        </div>
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">มูลค่ารวม USD:</span>
+          <span class="font-bold text-slate-200">${{ "{:,.0f}".format(r.total_oi_usd / 1000000) }}M</span>
+        </div>
+        <div class="flex justify-between py-1 border-b border-darkborder/50">
+          <span class="text-slate-400">Put/Call Ratio:</span>
+          <span class="font-semibold text-white">{{ r.put_call_oi_ratio }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 pt-3 border-t border-darkborder/50 text-[11px] text-slate-400">
+      <div class="font-semibold text-slate-300 mb-1">Top 5 Strikes กระจุกตัว:</div>
+      <div class="truncate text-slate-300">{{ r.top5_strikes }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Detailed Table -->
+<div class="mt-6 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">ตารางเปรียบเทียบ Expiry ขนาดใหญ่รอบล่าสุด</div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase">
+        <tr>
+          <th class="px-3 py-2">ประเภท</th>
+          <th class="px-3 py-2">วันหมดอายุ</th>
+          <th class="px-3 py-2">เหลือ (ชม.)</th>
+          <th class="px-3 py-2">Spot ($)</th>
+          <th class="px-3 py-2">Max Pain ($)</th>
+          <th class="px-3 py-2">Top OI ($)</th>
+          <th class="px-3 py-2">Call #1 ($)</th>
+          <th class="px-3 py-2">Put #1 ($)</th>
+          <th class="px-3 py-2">OI รวม (BTC)</th>
+          <th class="px-3 py-2">มูลค่า (USD)</th>
+          <th class="px-3 py-2">P/C Ratio</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        {% for r in records %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white uppercase">{{ r.kind }}</td>
+          <td class="px-3 py-2 font-semibold text-white">{{ r.expiry_date }}</td>
+          <td class="px-3 py-2">{{ r.hours_to_expiry }}</td>
+          <td class="px-3 py-2">${{ "{:,.2f}".format(r.index_price) }}</td>
+          <td class="px-3 py-2 text-amber-400 font-bold">${{ "{:,.0f}".format(r.max_pain) }}</td>
+          <td class="px-3 py-2 text-cyan-400">${{ "{:,.0f}".format(r.top_oi_strike) }}</td>
+          <td class="px-3 py-2 text-emerald-400">${{ "{:,.0f}".format(r.call1_strike) }}</td>
+          <td class="px-3 py-2 text-rose-400">${{ "{:,.0f}".format(r.put1_strike) }}</td>
+          <td class="px-3 py-2 font-semibold text-white">{{ "{:,.1f}".format(r.total_oi) }}</td>
+          <td class="px-3 py-2">${{ "{:,.0f}".format(r.total_oi_usd / 1000000) }}M</td>
+          <td class="px-3 py-2">{{ r.put_call_oi_ratio }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
