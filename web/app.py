@@ -135,13 +135,20 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
     scope: 'active' (default for main dashboard), 'expired' (for archive), 'all'
     """
     with get_db() as conn:
-        # Get distinct expiries with counts sorted chronologically (ascending)
+        # Get distinct expiries with counts and latest total_oi sorted chronologically (ascending)
         cur_exp = conn.execute("""
-            SELECT expiry_date, expiry_type, COUNT(*) as snap_count,
-                   MAX(snapshot_time_bkk) as last_snap
-            FROM snapshots
-            GROUP BY expiry_date
-            ORDER BY expiry_date ASC
+            SELECT s.expiry_date, s.expiry_type, COUNT(*) as snap_count,
+                   MAX(s.snapshot_time_bkk) as last_snap,
+                   (
+                       SELECT s2.total_oi
+                       FROM snapshots s2
+                       WHERE s2.expiry_date = s.expiry_date
+                       ORDER BY s2.snapshot_time_bkk DESC
+                       LIMIT 1
+                   ) as latest_total_oi
+            FROM snapshots s
+            GROUP BY s.expiry_date
+            ORDER BY s.expiry_date ASC
         """)
         all_exp = [dict(r) for r in cur_exp.fetchall()]
 
