@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}GEX รวม (Aggregate GEX) - BTC Options Pinning{% endblock %}
+
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-darkborder gap-2">
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+      <span>⚡ GEX รวม (Aggregate Gamma Exposure)</span>
+    </h1>
+    <div class="text-xs text-slate-400 mt-1">
+      การคำนวณ Dealer GEX รวมตาม Strike สำหรับรอบล่าสุด ({{ latest_time or 'ไม่มีข้อมูล' }})
+    </div>
+  </div>
+  <div>
+    <a href="/export/big_expiries.csv" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded border border-darkborder transition">
+      📥 Export Big Expiries CSV
+    </a>
+  </div>
+</div>
+
+{% if not gex_data %}
+<div class="mt-6 bg-darkcard border border-darkborder rounded-xl p-8 text-center text-slate-400">
+  <div class="text-3xl mb-2">⚡</div>
+  <p>ยังไม่มีข้อมูล GEX รวมในระบบ</p>
+</div>
+{% else %}
+
+<!-- Big Expiries Cards Summary -->
+<div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+  {% for b in bigs %}
+  <div class="bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-bold uppercase px-2 py-0.5 rounded {% if b.kind == 'weekly' %}bg-blue-500/20 text-blue-400 border border-blue-500/30{% elif b.kind == 'monthly' %}bg-purple-500/20 text-purple-400 border border-purple-500/30{% else %}bg-amber-500/20 text-amber-400 border border-amber-500/30{% endif %}">
+        {{ b.kind }} Expiry
+      </span>
+      <span class="text-xs text-slate-400">{{ b.expiry_date }} (เหลือ {{ b.hours_to_expiry }} ชม.)</span>
+    </div>
+    <div class="mt-3 flex items-baseline justify-between">
+      <div>
+        <div class="text-xs text-slate-400">Max Pain</div>
+        <div class="text-lg font-bold text-amber-400">${{ "{:,.0f}".format(b.max_pain) }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-400">Top OI Strike</div>
+        <div class="text-lg font-bold text-cyan-400">${{ "{:,.0f}".format(b.top_oi_strike) }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-slate-400">Total OI (BTC)</div>
+        <div class="text-lg font-bold text-white">{{ "{:,.0f}".format(b.total_oi) }}</div>
+      </div>
+    </div>
+    <div class="mt-2 pt-2 border-t border-darkborder/50 text-xs text-slate-400 flex justify-between">
+      <span>C1: ${{ "{:,.0f}".format(b.call1_strike) }}</span>
+      <span>P1: ${{ "{:,.0f}".format(b.put1_strike) }}</span>
+      <span>P/C: {{ b.put_call_oi_ratio }}</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Aggregate GEX Chart -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-darkborder/70 gap-2">
+    <div>
+      <h2 class="text-base font-bold text-white">กราฟ GEX รวมตาม Strike (USD ต่อการเคลื่อนไหวของ Spot 1%)</h2>
+      <div class="text-xs text-slate-400 mt-0.5">Dealer Gamma Exposure: Call (+) Long Gamma | Put (-) Short Gamma</div>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500/70 inline-block"></span> Call GEX</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-rose-500/70 inline-block"></span> Put GEX</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-sky-400 inline-block"></span> Net GEX</span>
+    </div>
+  </div>
+
+  <div class="mt-4 h-96 w-full">
+    <canvas id="aggGexChart"></canvas>
+  </div>
+</div>
+
+<!-- Aggregate Table -->
+<div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
+  <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">ตารางรายละเอียด GEX และ Open Interest ตาม Strike</div>
+  <div class="overflow-x-auto max-h-96">
+    <table class="w-full text-xs text-left text-slate-300">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase sticky top-0">
+        <tr>
+          <th class="px-3 py-2">Strike ($)</th>
+          <th class="px-3 py-2">Net GEX ($/1%)</th>
+          <th class="px-3 py-2">Call GEX ($)</th>
+          <th class="px-3 py-2">Put GEX ($)</th>
+          <th class="px-3 py-2">Call OI (BTC)</th>
+          <th class="px-3 py-2">Put OI (BTC)</th>
+          <th class="px-3 py-2">Total OI (BTC)</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-darkborder/50">
+        {% for row in gex_data %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-3 py-2 font-bold text-white">${{ "{:,.0f}".format(row.strike) }}</td>
+          <td class="px-3 py-2 font-bold {% if (row.net_gex or 0) > 0 %}text-emerald-400{% elif (row.net_gex or 0) < 0 %}text-rose-400{% else %}text-slate-400{% endif %}">
+            ${{ "{:+,.0f}".format(row.net_gex) if row.net_gex is not none else "-" }}
+          </td>
+          <td class="px-3 py-2 text-emerald-400">${{ "{:,.0f}".format(row.call_gex) if row.call_gex is not none else "-" }}</td>
+          <td class="px-3 py-2 text-rose-400">${{ "{:,.0f}".format(row.put_gex) if row.put_gex is not none else "-" }}</td>
+          <td class="px-3 py-2">{{ "{:,.1f}".format(row.total_call_oi) if row.total_call_oi is not none else "-" }}</td>
+          <td class="px-3 py-2">{{ "{:,.1f}".format(row.total_put_oi) if row.total_put_oi is not none else "-" }}</td>
+          <td class="px-3 py-2 font-semibold text-white">{{ "{:,.1f}".format((row.total_call_oi or 0) + (row.total_put_oi or 0)) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const gexRaw = {{ gex_data | tojson }};
+  const gLabels = gexRaw.map(d => d.strike);
+  const gCall = gexRaw.map(d => d.call_gex || 0);
+  const gPut = gexRaw.map(d => d.put_gex || 0);
+  const gNet = gexRaw.map(d => d.net_gex || 0);
+
+  const ctxAgg = document.getElementById('aggGexChart').getContext('2d');
+  new Chart(ctxAgg, {
+    type: 'bar',
+    data: {
+      labels: gLabels,
+      datasets: [
+        {
+          type: 'line',
+          label: 'Net GEX ($/1%)',
+          data: gNet,
+          borderColor: '#38bdf8',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          fill: false,
+          tension: 0.1,
+          order: 1
+        },
+        {
+          label: 'Call GEX ($)',
+          data: gCall,
+          backgroundColor: 'rgba(16, 185, 129, 0.6)',
+          order: 2
+        },
+        {
+          label: 'Put GEX ($)',
+          data: gPut,
+          backgroundColor: 'rgba(244, 63, 94, 0.6)',
+          order: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(item) {
+              return `${item.dataset.label}: $${Number(item.raw).toLocaleString()}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } }
+        },
+        y: {
+          grid: { color: 'rgba(51, 65, 85, 0.5)' },
+          title: { display: true, text: 'USD per 1% move', font: { size: 11 } }
+        }
+      }
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}
