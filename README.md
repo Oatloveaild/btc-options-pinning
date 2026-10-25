@@ -12,6 +12,10 @@ pinned: false
 
 ระบบเก็บสถิติ BTC Options จาก Deribit Public API และเว็บไซต์ Dashboard วิเคราะห์ **Price Pinning** เมื่อสัญญาหมดอายุ (15:00 น. เวลาไทย / 08:00 UTC)
 
+* 🌐 **Live Dashboard:** [https://btc-options-pinning.onrender.com](https://btc-options-pinning.onrender.com)
+* 🐙 **GitHub Repository:** [https://github.com/ninayasha/btc-options-pinning](https://github.com/ninayasha/btc-options-pinning)
+* 📁 **Google Drive Backup:** `BTC_Options_Pinning_Data` (industry9110@gmail.com)
+
 ---
 
 ## 📌 คุณสมบัติเด่น (Features)
