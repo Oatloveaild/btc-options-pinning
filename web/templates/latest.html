@@ -211,12 +211,21 @@
   <!-- Integrated Compact Controls attached directly above the chart (Zero Scrolling) -->
   <div class="mt-3 bg-[#0f1a33] border border-[#1e2c4a] rounded-xl p-2.5 sm:p-3">
     <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-      <!-- Asset -->
-      <div class="md:col-span-2">
-        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Asset</label>
-        <select class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none font-medium">
-          <option>BTC (Deribit)</option>
-        </select>
+      <!-- Asset & Metric Selector -->
+      <div class="md:col-span-2 flex flex-col justify-between">
+        <div>
+          <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Asset</label>
+          <select class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none font-medium">
+            <option>BTC (Deribit)</option>
+          </select>
+        </div>
+        <div class="mt-2">
+          <label class="block text-[10px] uppercase font-bold text-cyan-400 mb-1">โหมดกราฟ (Metric)</label>
+          <select id="metricViewSelect" onchange="changeMetricView(this.value)" class="w-full bg-[#16233b] border border-cyan-500/50 text-cyan-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-cyan-400 font-bold cursor-pointer transition">
+            <option value="oi" selected>📊 Open Interest (OI)</option>
+            <option value="volume">📈 Volume 24h (Vol)</option>
+          </select>
+        </div>
       </div>
 
       <!-- Expiry Target & Groups -->
@@ -290,11 +299,11 @@
     <div class="flex items-center space-x-4 text-xs font-semibold">
       <div class="flex items-center space-x-1.5">
         <span class="w-3 h-3 rounded bg-[#10b981] inline-block"></span>
-        <span class="text-emerald-400">Call OI</span>
+        <span class="text-emerald-400" id="legendCallLabel">Call OI</span>
       </div>
       <div class="flex items-center space-x-1.5">
         <span class="w-3 h-3 rounded bg-[#f43f5e] inline-block"></span>
-        <span class="text-rose-400">Put OI</span>
+        <span class="text-rose-400" id="legendPutLabel">Put OI</span>
       </div>
       <div class="flex items-center space-x-1.5">
         <span class="w-3 h-0.5 border-t-2 border-dashed border-pink-400 inline-block"></span>
@@ -315,7 +324,7 @@
     <!-- Panel 1: Top Open Interest & IV Chart (Call Green / Put Red) -->
     <div>
       <div class="text-xs font-bold text-slate-300 mb-1 flex justify-between">
-        <span>กราฟ Open Interest ตาม Strike (BTC) • เส้นประชมพู: IV Smile (%)</span>
+        <span id="chartMainTitle">กราฟ Open Interest ตาม Strike (BTC) • เส้นประชมพู: IV Smile (%)</span>
         <span class="text-slate-400" id="oiSubheader">Expiry: {{ snap.expiry_date }}</span>
       </div>
       <div class="h-[360px] w-full">
@@ -760,6 +769,31 @@
   let playSpeed = 1500;
   let chartOI = null;
   let chartGEX = null;
+  let currentMetricView = 'oi';
+
+  function changeMetricView(val) {
+    currentMetricView = val;
+    const titleEl = document.getElementById('chartMainTitle');
+    const legCall = document.getElementById('legendCallLabel');
+    const legPut = document.getElementById('legendPutLabel');
+
+    if (currentMetricView === 'volume') {
+      if (titleEl) titleEl.innerHTML = 'กราฟ Volume 24h ตาม Strike (BTC) • เส้นประชมพู: IV Smile (%)';
+      if (legCall) legCall.textContent = 'Call Volume';
+      if (legPut) legPut.textContent = 'Put Volume';
+      if (chartOI && chartOI.options && chartOI.options.scales && chartOI.options.scales.y) {
+        chartOI.options.scales.y.title.text = '24h Volume (BTC)';
+      }
+    } else {
+      if (titleEl) titleEl.innerHTML = 'กราฟ Open Interest ตาม Strike (BTC) • เส้นประชมพู: IV Smile (%)';
+      if (legCall) legCall.textContent = 'Call OI';
+      if (legPut) legPut.textContent = 'Put OI';
+      if (chartOI && chartOI.options && chartOI.options.scales && chartOI.options.scales.y) {
+        chartOI.options.scales.y.title.text = 'Open Interest (BTC)';
+      }
+    }
+    renderFrame(currentIndex);
+  }
 
   Chart.defaults.color = '#8fa0bd';
   Chart.defaults.borderColor = '#1e2c4a';
@@ -913,12 +947,22 @@
                 if (item.dataset.label.includes('IV')) return `IV: ${item.raw ? Number(item.raw).toFixed(1) + '%' : '-'}`;
                 const snap = timelineData[currentIndex];
                 const st = (snap && snap.strikes) ? snap.strikes[item.dataIndex] : null;
+                const callOI = st ? (st.call_oi || 0) : 0;
+                const putOI = st ? (st.put_oi || 0) : 0;
+                const callVol = st ? (st.call_volume_24h || 0) : 0;
+                const putVol = st ? (st.put_volume_24h || 0) : 0;
                 if (item.datasetIndex === 0) {
-                  const vol = st ? (st.call_volume_24h || 0) : 0;
-                  return `Call OI: ${Number(item.raw).toLocaleString()} BTC (Vol 24h: ${Number(vol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC)`;
+                  if (currentMetricView === 'volume') {
+                    return `Call Vol 24h: ${Number(callVol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC (OI: ${Number(callOI).toLocaleString()} BTC)`;
+                  } else {
+                    return `Call OI: ${Number(callOI).toLocaleString()} BTC (Vol 24h: ${Number(callVol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC)`;
+                  }
                 } else if (item.datasetIndex === 1) {
-                  const vol = st ? (st.put_volume_24h || 0) : 0;
-                  return `Put OI: ${Number(item.raw).toLocaleString()} BTC (Vol 24h: ${Number(vol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC)`;
+                  if (currentMetricView === 'volume') {
+                    return `Put Vol 24h: ${Number(putVol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC (OI: ${Number(putOI).toLocaleString()} BTC)`;
+                  } else {
+                    return `Put OI: ${Number(putOI).toLocaleString()} BTC (Vol 24h: ${Number(putVol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC)`;
+                  }
                 }
                 return `${item.dataset.label}: ${Number(item.raw).toLocaleString()} BTC`;
               }
@@ -1101,8 +1145,19 @@
     // 4. Update Both Charts with matching labels
     const strikes = snap.strikes || [];
     const labels = strikes.map(s => s.strike);
-    const callOI = strikes.map(s => s.call_oi);
-    const putOI = strikes.map(s => s.put_oi);
+
+    let callData, putData;
+    if (currentMetricView === 'volume') {
+      callData = strikes.map(s => s.call_volume_24h || 0);
+      putData = strikes.map(s => s.put_volume_24h || 0);
+      chartOI.data.datasets[0].label = 'Call Volume (BTC)';
+      chartOI.data.datasets[1].label = 'Put Volume (BTC)';
+    } else {
+      callData = strikes.map(s => s.call_oi || 0);
+      putData = strikes.map(s => s.put_oi || 0);
+      chartOI.data.datasets[0].label = 'Call OI (BTC)';
+      chartOI.data.datasets[1].label = 'Put OI (BTC)';
+    }
 
     const ivCurve = strikes.map(s => {
       const civ = s.call_iv;
@@ -1112,8 +1167,8 @@
     });
 
     chartOI.data.labels = labels;
-    chartOI.data.datasets[0].data = callOI; // Green
-    chartOI.data.datasets[1].data = putOI;  // Red
+    chartOI.data.datasets[0].data = callData; // Green
+    chartOI.data.datasets[1].data = putData;  // Red
     chartOI.data.datasets[2].data = ivCurve;
     chartOI.update('none');
 
