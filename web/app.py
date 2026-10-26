@@ -728,6 +728,9 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
         ]
     }
 
+    from src.settlement_analytics import compute_weekly_horizon_stats
+    weekly_horizon = compute_weekly_horizon_stats(conn)
+
     return templates.TemplateResponse(
         request=request,
         name="latest.html",
@@ -748,6 +751,7 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
             "monthly_stats": monthly_stats,
             "with_events_stats": with_events_stats,
             "no_events_stats": no_events_stats,
+            "weekly_horizon": weekly_horizon,
             "mp_distances": mp_distances,
             "sched_info": sched_info,
         },
@@ -963,6 +967,9 @@ def page_stats(request: Request):
     with_events_stats = compute_stats_for_subset([r for r in all_results if r.get("has_high_impact_event") == 1])
     no_events_stats = compute_stats_for_subset([r for r in all_results if not r.get("has_high_impact_event")])
 
+    from src.settlement_analytics import compute_weekly_horizon_stats
+    weekly_horizon = compute_weekly_horizon_stats(conn)
+
     # Distribution data for chart
     mp_distances = [
         round(r["dist_max_pain_pct"], 2) for r in all_results if r.get("dist_max_pain_pct") is not None
@@ -982,6 +989,7 @@ def page_stats(request: Request):
             "monthly": monthly_stats,
             "with_events": with_events_stats,
             "no_events": no_events_stats,
+            "weekly_horizon": weekly_horizon,
             "mp_distances": mp_distances,
             "top_distances": top_distances,
             "total_settled": len(all_results),
