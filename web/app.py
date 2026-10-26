@@ -142,7 +142,7 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
     scope: 'active' (default for main dashboard), 'expired' (for archive), 'all'
     """
     with get_db() as conn:
-        # Get distinct expiries with counts and latest total_oi sorted chronologically (ascending)
+        # Get distinct expiries with counts and latest total_oi and total_volume sorted chronologically (ascending)
         cur_exp = conn.execute("""
             SELECT s.expiry_date, s.expiry_type, COUNT(*) as snap_count,
                    MAX(s.snapshot_time_bkk) as last_snap,
@@ -152,12 +152,33 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                        WHERE s2.expiry_date = s.expiry_date
                        ORDER BY s2.snapshot_time_bkk DESC
                        LIMIT 1
-                   ) as latest_total_oi
+                   ) as latest_total_oi,
+                   (
+                       SELECT s2.total_volume
+                       FROM snapshots s2
+                       WHERE s2.expiry_date = s.expiry_date
+                       ORDER BY s2.snapshot_time_bkk DESC
+                       LIMIT 1
+                   ) as latest_total_volume
             FROM snapshots s
             GROUP BY s.expiry_date
             ORDER BY s.expiry_date ASC
         """)
         all_exp = [dict(r) for r in cur_exp.fetchall()]
+
+        # Populate latest volume from oi_by_strike for expiries where snapshots.total_volume is null
+        cur_latest_vol = conn.execute("""
+            SELECT expiry_date, ROUND(SUM(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0)), 2) as vol
+            FROM oi_by_strike o
+            WHERE snapshot_time_bkk = (
+                SELECT MAX(o2.snapshot_time_bkk) FROM oi_by_strike o2 WHERE o2.expiry_date = o.expiry_date
+            )
+            GROUP BY expiry_date
+        """)
+        vol_map = {r["expiry_date"]: r["vol"] for r in cur_latest_vol.fetchall()}
+        for e in all_exp:
+            if not e.get("latest_total_volume"):
+                e["latest_total_volume"] = vol_map.get(e["expiry_date"], 0.0)
 
         if scope == "active":
             expiries = [e for e in all_exp if is_expiry_active(e["expiry_date"])]
