@@ -536,6 +536,13 @@ def run_snapshot(label: str = "manual") -> Dict[str, Any]:
             fallback_used=0,
         )
 
+        # Step 7: Auto-backup database to Google Drive
+        try:
+            from src.gdrive_backup import backup_database
+            backup_database()
+        except Exception as e:
+            logger.warning(f"Google Drive auto-backup error: {e}")
+
         return {
             "status": "success",
             "snapshot_time_bkk": ref_time_str,
