@@ -1,7 +1,13 @@
 import base64
 import os
+import sys
 from pathlib import Path
 import httpx
+
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")
+    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, "replace")
 
 def upload_to_github(github_token: str, repo_name: str = "btc-options-pinning"):
     headers = {
@@ -33,14 +39,14 @@ def upload_to_github(github_token: str, repo_name: str = "btc-options-pinning"):
 
     # 3. Upload project files
     base_dir = Path(__file__).resolve().parent
-    ignore_dirs = {".venv", "__pycache__", ".git", ".idea", ".vscode"}
+    ignore_dirs = {".venv", "__pycache__", ".git", ".idea", ".vscode", "raw", "logs"}
     ignore_files = {"cloudflared.exe"}
 
     files_to_upload = []
     for root, dirs, files in os.walk(base_dir):
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
         for f in files:
-            if f in ignore_files or f.endswith(".pyc") or f.endswith(".log"):
+            if f in ignore_files or f.endswith(".pyc") or f.endswith(".log") or f.endswith(".db"):
                 continue
             full_path = Path(root) / f
             rel_path = full_path.relative_to(base_dir).as_posix()
@@ -80,4 +86,18 @@ def upload_to_github(github_token: str, repo_name: str = "btc-options-pinning"):
     print(f"🔗 Repo URL: {repo_url}")
     print(f"🚀 1-Click Deploy to Render: {render_deploy_url}")
     print("="*60 + "\n")
+
+    # Auto trigger Render Deploy Hook if configured
+    deploy_hook = os.getenv("RENDER_DEPLOY_HOOK", "https://api.render.com/deploy/srv-dberj8dg1s2s73dirqo0?key=ku_MLgq0LcA")
+    if deploy_hook:
+        try:
+            print("🚀 Triggering Render auto-deploy via Deploy Hook...")
+            r_dep = httpx.post(deploy_hook, timeout=15)
+            if r_dep.status_code == 200:
+                print(f"  ✓ Render deploy triggered successfully: {r_dep.text}")
+            else:
+                print(f"  ✗ Render deploy hook returned: {r_dep.status_code} {r_dep.text}")
+        except Exception as e:
+            print(f"  ✗ Failed to call Render deploy hook: {e}")
+
     return repo_url
