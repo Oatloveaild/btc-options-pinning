@@ -51,6 +51,9 @@
 
         <!-- Manual Actions -->
         <div class="flex items-center space-x-2">
+          <button onclick="triggerBackup()" id="btnBackup" title="สำรองข้อมูลไปยัง Google Drive ทันที" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-medium px-2.5 py-1.5 rounded-md shadow flex items-center space-x-1 transition">
+            <span>☁️ สำรอง G-Drive</span>
+          </button>
           <button onclick="triggerRun('snapshot')" id="btnSnap" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-medium px-3 py-1.5 rounded-md shadow flex items-center space-x-1.5 transition">
             <span>⚡ รัน Snapshot ตอนนี้</span>
           </button>
@@ -122,6 +125,28 @@
     }
     function hideToast() {
       document.getElementById('toast').classList.add('hidden');
+    }
+
+    async function triggerBackup() {
+      const btn = document.getElementById('btnBackup');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<span>⏳ กำลังสำรอง...</span>';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/backup/gdrive', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('สำรองข้อมูลสำเร็จ ☁️', data.message || 'บันทึกไฟล์ขึ้น Google Drive เรียบร้อยแล้ว', true);
+        } else {
+          showToast('พบข้อผิดพลาด', data.detail || data.error || 'ไม่สามารถสำรองข้อมูลได้', false);
+        }
+      } catch (e) {
+        showToast('ล้มเหลว', e.message, false);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
     }
 
     async function triggerRun(action) {
