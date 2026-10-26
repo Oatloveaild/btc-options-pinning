@@ -770,6 +770,46 @@
   let chartOI = null;
   let chartGEX = null;
   let currentMetricView = 'oi';
+  let activeExpiriesList = [];
+
+  function updateExpiryPicker() {
+    const picker = document.getElementById('expiryPicker');
+    if (!picker || !activeExpiriesList || activeExpiriesList.length === 0) return;
+    const curVal = picker.value;
+
+    const totalMetricSum = activeExpiriesList.reduce((acc, e) => {
+      return acc + (currentMetricView === 'volume' ? (e.latest_total_volume || 0) : (e.latest_total_oi || 0));
+    }, 0);
+
+    const aggLabel = currentMetricView === 'volume'
+      ? `🌐 รวมทุก Expiry ในอนาคต (All Aggregated) • Vol: ${Math.round(totalMetricSum).toLocaleString()} BTC`
+      : `🌐 รวมทุก Expiry ในอนาคต (All Aggregated) • OI: ${Math.round(totalMetricSum).toLocaleString()} BTC`;
+
+    let html = `<option value="all">${aggLabel}</option>`;
+
+    activeExpiriesList.forEach(e => {
+      let tag = e.expiry_type || '';
+      if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • เป้าหมายหลัก';
+      else if (e.expiry_type === 'monthly') tag += ' • สิ้นเดือน';
+      else if (e.expiry_type === 'quarterly') tag += ' • ไตรมาส';
+      else if (e.expiry_type === 'weekly') tag += ' • ศุกร์';
+
+      let metricText = '';
+      if (currentMetricView === 'volume') {
+        const vol = e.latest_total_volume || 0;
+        metricText = ` • Vol: ${Math.round(vol).toLocaleString()} BTC`;
+      } else {
+        const oi = e.latest_total_oi || 0;
+        metricText = ` • OI: ${Math.round(oi).toLocaleString()} BTC`;
+      }
+
+      html += `<option value="${e.expiry_date}">${e.expiry_date} (${tag})${metricText}</option>`;
+    });
+
+    html += `<option value="__archive__">🗄️ ดูประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Archive) →</option>`;
+    picker.innerHTML = html;
+    if (curVal) picker.value = curVal;
+  }
 
   function changeMetricView(val) {
     currentMetricView = val;
@@ -792,6 +832,8 @@
         chartOI.options.scales.y.title.text = 'Open Interest (BTC)';
       }
     }
+
+    updateExpiryPicker();
     renderFrame(currentIndex);
   }
 
@@ -1049,32 +1091,13 @@
       const data = await res.json();
       timelineData = data.snapshots || [];
 
-      const picker = document.getElementById('expiryPicker');
-      if (picker.options.length <= 1) {
-        picker.innerHTML = '<option value="all">🌐 รวมทุก Expiry ในอนาคต (All Aggregated)</option>';
-        (data.expiries || []).forEach(e => {
-          const opt = document.createElement('option');
-          opt.value = e.expiry_date;
-          let tag = e.expiry_type || '';
-          if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • เป้าหมายหลัก';
-          else if (e.expiry_type === 'monthly') tag += ' • สิ้นเดือน';
-          else if (e.expiry_type === 'quarterly') tag += ' • ไตรมาส';
-          else if (e.expiry_type === 'weekly') tag += ' • ศุกร์';
-
-          let oiText = '';
-          if (e.latest_total_oi) {
-            oiText = ` • OI: ${Math.round(e.latest_total_oi).toLocaleString()} BTC`;
-          }
-          opt.textContent = `${e.expiry_date} (${tag})${oiText}`;
-          picker.appendChild(opt);
-        });
-
-        const optArch = document.createElement('option');
-        optArch.value = '__archive__';
-        optArch.textContent = '🗄️ ดูประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Archive) →';
-        picker.appendChild(optArch);
-
-        if (expiryDate) picker.value = expiryDate;
+      if (data.expiries && data.expiries.length > 0) {
+        activeExpiriesList = data.expiries;
+        updateExpiryPicker();
+        if (expiryDate) {
+          const picker = document.getElementById('expiryPicker');
+          if (picker) picker.value = expiryDate;
+        }
       }
 
       const slider = document.getElementById('timelineSlider');
