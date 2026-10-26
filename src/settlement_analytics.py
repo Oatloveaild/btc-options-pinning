@@ -505,9 +505,9 @@ def compute_settlement_flow_stats(enriched_results: List[Dict[str, Any]]) -> Dic
 def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     """
     Computes 7-Day Weekly Expiry & Range Migration Statistics:
-    - Baseline (D-7 or earliest snapshot): BTC Spot, P1, C1, Range Width
-    - Final (D-0 / Settlement): Settle Price, BTC % change, P1 Shift, C1 Shift
-    - 7-Day Range Containment: Did price settle within the initial 7-day P1-C1 range?
+    - Baseline (D-7 or earliest snapshot): BTC Spot, P1, P2, C1, C2, Range Widths
+    - Final (D-0 / Settlement): Settle Price, BTC % change, P1/P2 Shifts, C1/C2 Shifts
+    - 7-Day Range Containment: Did price settle within the initial 7-day P1-C1 & P2-C2 range?
     - Tracks both settled weekly contracts and active weekly contracts currently underway.
     """
     cur = conn.cursor()
@@ -515,7 +515,8 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     # 1. Get all snapshots ordered by time
     cur.execute("""
         SELECT expiry_date, expiry_type, snapshot_time_bkk, index_price,
-               call1_strike, put1_strike, max_pain, total_oi, call1_oi, put1_oi
+               call1_strike, call2_strike, put1_strike, put2_strike,
+               max_pain, total_oi, call1_oi, call2_oi, put1_oi, put2_oi
         FROM snapshots
         ORDER BY snapshot_time_bkk ASC
     """)
@@ -556,15 +557,30 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
         settle_price = settle_res["settlement_price"] if is_settled else None
 
         base_spot = base_snap["index_price"]
-        base_p1 = base_snap["put1_strike"]
-        base_c1 = base_snap["call1_strike"]
-        base_mp = base_snap["max_pain"]
+        base_p1 = base_snap.get("put1_strike")
+        base_p2 = base_snap.get("put2_strike")
+        base_c1 = base_snap.get("call1_strike")
+        base_c2 = base_snap.get("call2_strike")
+        base_mp = base_snap.get("max_pain")
+
+        # Inner range (P1 to C1) width %
         base_width = round((base_c1 - base_p1) / base_p1 * 100, 2) if (base_c1 and base_p1) else None
 
-        final_p1 = settle_res.get("put1_strike") if is_settled else latest_snap["put1_strike"]
-        final_c1 = settle_res.get("call1_strike") if is_settled else latest_snap["call1_strike"]
-        final_mp = settle_res.get("max_pain") if is_settled else latest_snap["max_pain"]
-        current_spot = settle_price if is_settled else latest_snap["index_price"]
+        # P2 to C2 direct width %
+        base_width_p2_c2 = round((base_c2 - base_p2) / base_p2 * 100, 2) if (base_c2 and base_p2) else None
+
+        # Outer envelope boundary: min(P1, P2) to max(C1, C2)
+        lower_outer = min(p for p in [base_p1, base_p2] if p is not None) if (base_p1 or base_p2) else base_p1
+        upper_outer = max(c for c in [base_c1, base_c2] if c is not None) if (base_c1 or base_c2) else base_c1
+        base_outer_width = round((upper_outer - lower_outer) / lower_outer * 100, 2) if (lower_outer and upper_outer) else None
+
+        # Final / latest values
+        final_p1 = settle_res.get("put1_strike") if is_settled else latest_snap.get("put1_strike")
+        final_p2 = settle_res.get("put2_strike") if is_settled else latest_snap.get("put2_strike")
+        final_c1 = settle_res.get("call1_strike") if is_settled else latest_snap.get("call1_strike")
+        final_c2 = settle_res.get("call2_strike") if is_settled else latest_snap.get("call2_strike")
+        final_mp = settle_res.get("max_pain") if is_settled else latest_snap.get("max_pain")
+        current_spot = settle_price if is_settled else latest_snap.get("index_price")
 
         # 7-day BTC Price Change & Wall Shifts
         btc_chg_usd = round(current_spot - base_spot, 2) if (current_spot and base_spot) else 0.0
@@ -573,47 +589,55 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
         p1_shift_usd = round(final_p1 - base_p1, 2) if (final_p1 and base_p1) else 0.0
         p1_shift_pct = round(p1_shift_usd / base_p1 * 100, 2) if (p1_shift_usd and base_p1) else 0.0
 
+        p2_shift_usd = round(final_p2 - base_p2, 2) if (final_p2 and base_p2) else 0.0
+        p2_shift_pct = round(p2_shift_usd / base_p2 * 100, 2) if (p2_shift_usd and base_p2) else 0.0
+
         c1_shift_usd = round(final_c1 - base_c1, 2) if (final_c1 and base_c1) else 0.0
         c1_shift_pct = round(c1_shift_usd / base_c1 * 100, 2) if (c1_shift_usd and base_c1) else 0.0
 
+        c2_shift_usd = round(final_c2 - base_c2, 2) if (final_c2 and base_c2) else 0.0
+        c2_shift_pct = round(c2_shift_usd / base_c2 * 100, 2) if (c2_shift_usd and base_c2) else 0.0
+
         # Containment & Wall Distance Evaluation
         settled_in_7d_range = None
+        settled_in_outer_range = None
         status = "in_progress"
         badge = "⏳ กำลังติดตาม"
         badge_class = "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-        dist_to_c1_pct = None
-        dist_to_p1_pct = None
 
-        if base_c1 and current_spot:
-            dist_to_c1_pct = round((current_spot - base_c1) / base_c1 * 100, 2)
-        if base_p1 and current_spot:
-            dist_to_p1_pct = round((current_spot - base_p1) / base_p1 * 100, 2)
+        dist_to_c1_pct = round((current_spot - base_c1) / base_c1 * 100, 2) if (base_c1 and current_spot) else None
+        dist_to_c2_pct = round((current_spot - base_c2) / base_c2 * 100, 2) if (base_c2 and current_spot) else None
+        dist_to_p1_pct = round((current_spot - base_p1) / base_p1 * 100, 2) if (base_p1 and current_spot) else None
+        dist_to_p2_pct = round((current_spot - base_p2) / base_p2 * 100, 2) if (base_p2 and current_spot) else None
 
         if is_settled and base_p1 and base_c1 and settle_price:
             if base_p1 <= settle_price <= base_c1:
                 settled_in_7d_range = True
                 status = "contained"
-                badge = "🛡️ Settle ในกรอบ 7D"
+                badge = "🛡️ Settle ในกรอบ P1–C1"
                 badge_class = "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
             elif settle_price > base_c1:
                 settled_in_7d_range = False
                 status = "call_breakout"
-                badge = f"🐂 ทะลุ Call บน (+{dist_to_c1_pct}%)"
+                badge = f"🐂 ทะลุ Call #1 (+{dist_to_c1_pct}%)"
                 badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
             else:
                 settled_in_7d_range = False
                 status = "put_breakdown"
-                badge = f"🐻 หลุด Put ล่าง ({dist_to_p1_pct}%)"
+                badge = f"🐻 หลุด Put #1 ({dist_to_p1_pct}%)"
                 badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+
+            if lower_outer and upper_outer:
+                settled_in_outer_range = (lower_outer <= settle_price <= upper_outer)
         elif not is_settled and base_p1 and base_c1 and current_spot:
             if base_p1 <= current_spot <= base_c1:
-                badge = "🛡️ ปัจจุบันอยู่ในกรอบ"
+                badge = "🛡️ ปัจจุบันอยู่ในกรอบ P1–C1"
                 badge_class = "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
             elif current_spot > base_c1:
-                badge = f"⚠️ ปัจจุบันเหนือ Call (+{dist_to_c1_pct}%)"
+                badge = f"⚠️ ปัจจุบันเหนือ Call #1 (+{dist_to_c1_pct}%)"
                 badge_class = "bg-amber-500/20 text-amber-300 border border-amber-500/40"
             else:
-                badge = f"⚠️ ปัจจุบันใต้ Put ({dist_to_p1_pct}%)"
+                badge = f"⚠️ ปัจจุบันใต้ Put #1 ({dist_to_p1_pct}%)"
                 badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
 
         base_dt = datetime.strptime(base_snap["snapshot_time_bkk"][:10], "%Y-%m-%d")
@@ -630,24 +654,39 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
             "base_date": base_snap["snapshot_time_bkk"],
             "base_spot": base_spot,
             "base_p1": base_p1,
+            "base_p2": base_p2,
             "base_c1": base_c1,
+            "base_c2": base_c2,
             "base_mp": base_mp,
             "base_width": base_width,
+            "base_width_p2_c2": base_width_p2_c2,
+            "base_outer_width": base_outer_width,
+            "lower_outer": lower_outer,
+            "upper_outer": upper_outer,
             "final_p1": final_p1,
+            "final_p2": final_p2,
             "final_c1": final_c1,
+            "final_c2": final_c2,
             "final_mp": final_mp,
             "btc_chg_usd": btc_chg_usd,
             "btc_chg_pct": btc_chg_pct,
             "p1_shift_usd": p1_shift_usd,
             "p1_shift_pct": p1_shift_pct,
+            "p2_shift_usd": p2_shift_usd,
+            "p2_shift_pct": p2_shift_pct,
             "c1_shift_usd": c1_shift_usd,
             "c1_shift_pct": c1_shift_pct,
+            "c2_shift_usd": c2_shift_usd,
+            "c2_shift_pct": c2_shift_pct,
             "settled_in_7d_range": settled_in_7d_range,
+            "settled_in_outer_range": settled_in_outer_range,
             "status": status,
             "badge": badge,
             "badge_class": badge_class,
             "dist_to_c1_pct": dist_to_c1_pct,
+            "dist_to_c2_pct": dist_to_c2_pct,
             "dist_to_p1_pct": dist_to_p1_pct,
+            "dist_to_p2_pct": dist_to_p2_pct,
         })
 
     # Summary metrics for settled weekly items
@@ -656,6 +695,8 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     contained_count = sum(1 for w in settled_items if w["settled_in_7d_range"] is True)
     contained_7d_rate = round(contained_count / n_settled * 100.0, 1) if n_settled > 0 else 100.0
     avg_width_7d = round(sum(w["base_width"] for w in settled_items if w["base_width"]) / n_settled, 2) if n_settled > 0 else 14.7
+    avg_outer_width_7d = round(sum(w["base_outer_width"] for w in settled_items if w.get("base_outer_width")) / n_settled, 2) if n_settled > 0 else 18.5
+    avg_width_p2_c2_7d = round(sum(w["base_width_p2_c2"] for w in settled_items if w.get("base_width_p2_c2")) / n_settled, 2) if n_settled > 0 else 16.0
 
     # Active items currently underway
     active_items = [w for w in weekly_items if not w["is_settled"]]
@@ -670,4 +711,6 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
         "contained_count": contained_count,
         "contained_7d_rate": contained_7d_rate,
         "avg_width_7d": avg_width_7d,
+        "avg_outer_width_7d": avg_outer_width_7d,
+        "avg_width_p2_c2_7d": avg_width_p2_c2_7d,
     }
