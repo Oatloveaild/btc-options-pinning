@@ -502,6 +502,147 @@ def compute_settlement_flow_stats(enriched_results: List[Dict[str, Any]]) -> Dic
     }
 
 
+def compute_stats_for_subset(records: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Computes hit-rate and distance metrics across reference targets:
+    Max Pain, Top OI, Call #1, Call #2, Put #1, Put #2, Gamma Flip, and Range (P1-C1 & P2-C2).
+    """
+    valid_mp = [r for r in records if r.get("max_pain") is not None]
+    n_mp = len(valid_mp)
+    if n_mp == 0:
+        return None
+
+    w05_mp = sum(r.get("[within_0.5pct_max_pain]") or r.get("within_0.5pct_max_pain") or 0 for r in valid_mp)
+    w1_mp = sum(r.get("within_1pct_max_pain") or 0 for r in valid_mp)
+    avg_dist_mp = (
+        sum(abs(r["dist_max_pain_pct"]) for r in valid_mp if r.get("dist_max_pain_pct") is not None) / n_mp
+        if n_mp > 0 else 0.0
+    )
+
+    valid_top = [r for r in records if r.get("top_oi_strike") is not None]
+    n_top = len(valid_top)
+    w05_top = sum(r.get("[within_0.5pct_top_oi]") or r.get("within_0.5pct_top_oi") or 0 for r in valid_top)
+    w1_top = sum(r.get("within_1pct_top_oi") or 0 for r in valid_top)
+    avg_dist_top = (
+        sum(abs(r["dist_top_oi_pct"]) for r in valid_top if r.get("dist_top_oi_pct") is not None) / n_top
+        if n_top > 0 else 0.0
+    )
+
+    # Call 1 & Put 1
+    valid_c1 = [r for r in records if r.get("call1_strike") is not None and r.get("call1_dist_pct") is not None]
+    n_c1 = len(valid_c1)
+    w05_c1 = sum(r.get("[call1_within_0.5pct]") or r.get("call1_within_0.5pct") or 0 for r in valid_c1)
+    w1_c1 = sum(r.get("call1_within_1pct") or 0 for r in valid_c1)
+    avg_dist_c1 = sum(abs(r["call1_dist_pct"]) for r in valid_c1) / n_c1 if n_c1 > 0 else 0.0
+
+    valid_p1 = [r for r in records if r.get("put1_strike") is not None and r.get("put1_dist_pct") is not None]
+    n_p1 = len(valid_p1)
+    w05_p1 = sum(r.get("[put1_within_0.5pct]") or r.get("put1_within_0.5pct") or 0 for r in valid_p1)
+    w1_p1 = sum(r.get("put1_within_1pct") or 0 for r in valid_p1)
+    avg_dist_p1 = sum(abs(r["put1_dist_pct"]) for r in valid_p1) / n_p1 if n_p1 > 0 else 0.0
+
+    # Call 2 & Put 2
+    valid_c2 = [r for r in records if r.get("call2_strike") is not None and r.get("call2_dist_pct") is not None]
+    n_c2 = len(valid_c2)
+    w05_c2 = sum(r.get("[call2_within_0.5pct]") or r.get("call2_within_0.5pct") or 0 for r in valid_c2)
+    w1_c2 = sum(r.get("call2_within_1pct") or 0 for r in valid_c2)
+    avg_dist_c2 = sum(abs(r["call2_dist_pct"]) for r in valid_c2) / n_c2 if n_c2 > 0 else 0.0
+
+    valid_p2 = [r for r in records if r.get("put2_strike") is not None and r.get("put2_dist_pct") is not None]
+    n_p2 = len(valid_p2)
+    w05_p2 = sum(r.get("[put2_within_0.5pct]") or r.get("put2_within_0.5pct") or 0 for r in valid_p2)
+    w1_p2 = sum(r.get("put2_within_1pct") or 0 for r in valid_p2)
+    avg_dist_p2 = sum(abs(r["put2_dist_pct"]) for r in valid_p2) / n_p2 if n_p2 > 0 else 0.0
+
+    # Gamma flip
+    valid_flip = [r for r in records if r.get("snap_gamma_flip") is not None and r.get("dist_gamma_flip_pct") is not None]
+    n_flip = len(valid_flip)
+    w05_flip = sum(1 for r in valid_flip if abs(r["dist_gamma_flip_pct"]) <= 0.5)
+    w1_flip = sum(1 for r in valid_flip if abs(r["dist_gamma_flip_pct"]) <= 1.0)
+    avg_dist_flip = sum(abs(r["dist_gamma_flip_pct"]) for r in valid_flip) / n_flip if n_flip > 0 else 0.0
+
+    # P1-C1 range
+    valid_range = [r for r in records if r.get("settled_in_put1_call1_range") is not None]
+    n_range = len(valid_range)
+    in_range_count = sum(r.get("settled_in_put1_call1_range") or 0 for r in valid_range)
+    avg_range_width = (
+        sum(r["range_width_pct"] for r in valid_range if r.get("range_width_pct") is not None) / n_range
+        if n_range > 0 else 0.0
+    )
+
+    # P2-C2 range
+    valid_p2_c2 = [
+        r for r in records
+        if r.get("put2_strike") is not None and r.get("call2_strike") is not None and r.get("settlement_price") is not None
+    ]
+    n_p2_c2 = len(valid_p2_c2)
+    in_p2_c2_count = sum(
+        1 for r in valid_p2_c2
+        if min(r["put2_strike"], r["call2_strike"]) <= r["settlement_price"] <= max(r["put2_strike"], r["call2_strike"])
+    )
+    avg_width_p2_c2 = (
+        sum(
+            abs(r["call2_strike"] - r["put2_strike"]) / min(r["put2_strike"], r["call2_strike"]) * 100.0
+            for r in valid_p2_c2
+        ) / n_p2_c2
+        if n_p2_c2 > 0 else 0.0
+    )
+
+    return {
+        "n": n_mp,
+        "max_pain": {
+            "pct_05": round(w05_mp / n_mp * 100.0, 1) if n_mp > 0 else 0.0,
+            "pct_1": round(w1_mp / n_mp * 100.0, 1) if n_mp > 0 else 0.0,
+            "avg_dist": round(avg_dist_mp, 2),
+        },
+        "top_oi": {
+            "pct_05": round(w05_top / n_top * 100.0, 1) if n_top > 0 else 0.0,
+            "pct_1": round(w1_top / n_top * 100.0, 1) if n_top > 0 else 0.0,
+            "avg_dist": round(avg_dist_top, 2),
+        },
+        "call1": {
+            "pct_05": round(w05_c1 / n_c1 * 100.0, 1) if n_c1 > 0 else 0.0,
+            "pct_1": round(w1_c1 / n_c1 * 100.0, 1) if n_c1 > 0 else 0.0,
+            "avg_dist": round(avg_dist_c1, 2),
+            "n": n_c1,
+        },
+        "call2": {
+            "pct_05": round(w05_c2 / n_c2 * 100.0, 1) if n_c2 > 0 else 0.0,
+            "pct_1": round(w1_c2 / n_c2 * 100.0, 1) if n_c2 > 0 else 0.0,
+            "avg_dist": round(avg_dist_c2, 2),
+            "n": n_c2,
+        },
+        "put1": {
+            "pct_05": round(w05_p1 / n_p1 * 100.0, 1) if n_p1 > 0 else 0.0,
+            "pct_1": round(w1_p1 / n_p1 * 100.0, 1) if n_p1 > 0 else 0.0,
+            "avg_dist": round(avg_dist_p1, 2),
+            "n": n_p1,
+        },
+        "put2": {
+            "pct_05": round(w05_p2 / n_p2 * 100.0, 1) if n_p2 > 0 else 0.0,
+            "pct_1": round(w1_p2 / n_p2 * 100.0, 1) if n_p2 > 0 else 0.0,
+            "avg_dist": round(avg_dist_p2, 2),
+            "n": n_p2,
+        },
+        "gamma_flip": {
+            "pct_05": round(w05_flip / n_flip * 100.0, 1) if n_flip > 0 else 0.0,
+            "pct_1": round(w1_flip / n_flip * 100.0, 1) if n_flip > 0 else 0.0,
+            "avg_dist": round(avg_dist_flip, 2),
+            "n_flip": n_flip,
+        },
+        "range": {
+            "in_range_pct": round(in_range_count / n_range * 100.0, 1) if n_range > 0 else 0.0,
+            "avg_width": round(avg_range_width, 2),
+            "n_range": n_range,
+        },
+        "range_p2_c2": {
+            "in_range_pct": round(in_p2_c2_count / n_p2_c2 * 100.0, 1) if n_p2_c2 > 0 else 0.0,
+            "avg_width": round(avg_width_p2_c2, 2),
+            "n_range": n_p2_c2,
+        },
+    }
+
+
 def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     """
     Computes 7-Day Weekly Expiry & Range Migration Statistics:
@@ -600,6 +741,7 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
 
         # Containment & Wall Distance Evaluation
         settled_in_7d_range = None
+        settled_in_p2_c2 = None
         settled_in_outer_range = None
         status = "in_progress"
         badge = "⏳ กำลังติดตาม"
@@ -626,6 +768,11 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
                 status = "put_breakdown"
                 badge = f"🐻 หลุด Put #1 ({dist_to_p1_pct}%)"
                 badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+
+            if base_p2 and base_c2:
+                low_p2_c2 = min(base_p2, base_c2)
+                high_p2_c2 = max(base_p2, base_c2)
+                settled_in_p2_c2 = (low_p2_c2 <= settle_price <= high_p2_c2)
 
             if lower_outer and upper_outer:
                 settled_in_outer_range = (lower_outer <= settle_price <= upper_outer)
@@ -679,6 +826,7 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
             "c2_shift_usd": c2_shift_usd,
             "c2_shift_pct": c2_shift_pct,
             "settled_in_7d_range": settled_in_7d_range,
+            "settled_in_p2_c2": settled_in_p2_c2,
             "settled_in_outer_range": settled_in_outer_range,
             "status": status,
             "badge": badge,
@@ -694,9 +842,21 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
     n_settled = len(settled_items)
     contained_count = sum(1 for w in settled_items if w["settled_in_7d_range"] is True)
     contained_7d_rate = round(contained_count / n_settled * 100.0, 1) if n_settled > 0 else 100.0
+    
+    contained_p2_c2_count = sum(1 for w in settled_items if w.get("settled_in_p2_c2") is True)
+    contained_p2_c2_7d_rate = round(contained_p2_c2_count / n_settled * 100.0, 1) if n_settled > 0 else 100.0
+    
+    contained_outer_count = sum(1 for w in settled_items if w.get("settled_in_outer_range") is True)
+    contained_outer_7d_rate = round(contained_outer_count / n_settled * 100.0, 1) if n_settled > 0 else 100.0
+
     avg_width_7d = round(sum(w["base_width"] for w in settled_items if w["base_width"]) / n_settled, 2) if n_settled > 0 else 14.7
     avg_outer_width_7d = round(sum(w["base_outer_width"] for w in settled_items if w.get("base_outer_width")) / n_settled, 2) if n_settled > 0 else 18.5
     avg_width_p2_c2_7d = round(sum(w["base_width_p2_c2"] for w in settled_items if w.get("base_width_p2_c2")) / n_settled, 2) if n_settled > 0 else 16.0
+
+    avg_c1_shift_pct = round(sum(abs(w["c1_shift_pct"]) for w in settled_items) / n_settled, 2) if n_settled > 0 else 0.0
+    avg_c2_shift_pct = round(sum(abs(w["c2_shift_pct"]) for w in settled_items) / n_settled, 2) if n_settled > 0 else 0.0
+    avg_p1_shift_pct = round(sum(abs(w["p1_shift_pct"]) for w in settled_items) / n_settled, 2) if n_settled > 0 else 0.0
+    avg_p2_shift_pct = round(sum(abs(w["p2_shift_pct"]) for w in settled_items) / n_settled, 2) if n_settled > 0 else 0.0
 
     # Active items currently underway
     active_items = [w for w in weekly_items if not w["is_settled"]]
@@ -710,7 +870,13 @@ def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
         "n_settled": n_settled,
         "contained_count": contained_count,
         "contained_7d_rate": contained_7d_rate,
+        "contained_p2_c2_7d_rate": contained_p2_c2_7d_rate,
+        "contained_outer_7d_rate": contained_outer_7d_rate,
         "avg_width_7d": avg_width_7d,
         "avg_outer_width_7d": avg_outer_width_7d,
         "avg_width_p2_c2_7d": avg_width_p2_c2_7d,
+        "avg_c1_shift_pct": avg_c1_shift_pct,
+        "avg_c2_shift_pct": avg_c2_shift_pct,
+        "avg_p1_shift_pct": avg_p1_shift_pct,
+        "avg_p2_shift_pct": avg_p2_shift_pct,
     }
