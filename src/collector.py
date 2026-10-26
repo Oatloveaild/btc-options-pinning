@@ -227,6 +227,13 @@ def run_snapshot(label: str = "manual") -> Dict[str, Any]:
                 total_oi_usd = round(total_oi * spot)
                 pc_ratio = round(total_put_oi / total_call_oi, 3) if total_call_oi > 0 else 0.0
 
+                # 24h Volume calculations
+                total_call_volume = round(sum(item.get("call_volume", 0.0) for item in strikes_list), 2)
+                total_put_volume = round(sum(item.get("put_volume", 0.0) for item in strikes_list), 2)
+                total_volume = round(total_call_volume + total_put_volume, 2)
+                total_volume_usd = round(total_volume * spot)
+                pc_vol_ratio = round(total_put_volume / total_call_volume, 3) if total_call_volume > 0 else 0.0
+
                 # Previous snapshot comparison for this specific expiry
                 cur_prev = conn.execute(
                     """
@@ -313,6 +320,11 @@ def run_snapshot(label: str = "manual") -> Dict[str, Any]:
                     "total_oi": total_oi,
                     "total_oi_usd": total_oi_usd,
                     "put_call_oi_ratio": pc_ratio,
+                    "total_call_volume": total_call_volume,
+                    "total_put_volume": total_put_volume,
+                    "total_volume": total_volume,
+                    "total_volume_usd": total_volume_usd,
+                    "put_call_volume_ratio": pc_vol_ratio,
                     "max_pain": max_pain,
                     "price_minus_max_pain": round(spot - max_pain, 2),
                     "price_vs_max_pain_pct": round((spot - max_pain) / max_pain * 100.0, 3) if max_pain > 0 else 0.0,
