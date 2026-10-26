@@ -500,3 +500,174 @@ def compute_settlement_flow_stats(enriched_results: List[Dict[str, Any]]) -> Dic
         "top_oi_rate": top_oi_rate,
         "avg_dist_mp": round(avg_dist_mp, 2),
     }
+
+
+def compute_weekly_horizon_stats(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """
+    Computes 7-Day Weekly Expiry & Range Migration Statistics:
+    - Baseline (D-7 or earliest snapshot): BTC Spot, P1, C1, Range Width
+    - Final (D-0 / Settlement): Settle Price, BTC % change, P1 Shift, C1 Shift
+    - 7-Day Range Containment: Did price settle within the initial 7-day P1-C1 range?
+    - Tracks both settled weekly contracts and active weekly contracts currently underway.
+    """
+    cur = conn.cursor()
+
+    # 1. Get all snapshots ordered by time
+    cur.execute("""
+        SELECT expiry_date, expiry_type, snapshot_time_bkk, index_price,
+               call1_strike, put1_strike, max_pain, total_oi, call1_oi, put1_oi
+        FROM snapshots
+        ORDER BY snapshot_time_bkk ASC
+    """)
+    all_snaps = [dict(r) for r in cur.fetchall()]
+
+    # 2. Get all settled results
+    cur.execute("SELECT * FROM expiry_results WHERE settlement_price IS NOT NULL ORDER BY expiry_date DESC")
+    settled_map = {r["expiry_date"]: dict(r) for r in cur.fetchall()}
+
+    # Group snapshots by expiry_date
+    by_expiry: Dict[str, List[Dict[str, Any]]] = {}
+    for s in all_snaps:
+        exp = s["expiry_date"]
+        by_expiry.setdefault(exp, []).append(s)
+
+    weekly_items = []
+    sorted_expiries = sorted(by_expiry.keys())
+
+    for exp in sorted_expiries:
+        snaps = by_expiry[exp]
+        try:
+            dt = datetime.strptime(exp, "%Y-%m-%d")
+        except Exception:
+            continue
+
+        is_friday = (dt.weekday() == 4)
+        exp_type = snaps[0].get("expiry_type") or ("weekly" if is_friday else "daily")
+
+        # Focus on Friday expiries or weekly/monthly contracts
+        if not is_friday and exp_type not in ("weekly", "monthly"):
+            continue
+
+        base_snap = snaps[0]
+        latest_snap = snaps[-1]
+        settle_res = settled_map.get(exp)
+
+        is_settled = settle_res is not None and settle_res.get("settlement_price") is not None
+        settle_price = settle_res["settlement_price"] if is_settled else None
+
+        base_spot = base_snap["index_price"]
+        base_p1 = base_snap["put1_strike"]
+        base_c1 = base_snap["call1_strike"]
+        base_mp = base_snap["max_pain"]
+        base_width = round((base_c1 - base_p1) / base_p1 * 100, 2) if (base_c1 and base_p1) else None
+
+        final_p1 = settle_res.get("put1_strike") if is_settled else latest_snap["put1_strike"]
+        final_c1 = settle_res.get("call1_strike") if is_settled else latest_snap["call1_strike"]
+        final_mp = settle_res.get("max_pain") if is_settled else latest_snap["max_pain"]
+        current_spot = settle_price if is_settled else latest_snap["index_price"]
+
+        # 7-day BTC Price Change & Wall Shifts
+        btc_chg_usd = round(current_spot - base_spot, 2) if (current_spot and base_spot) else 0.0
+        btc_chg_pct = round(btc_chg_usd / base_spot * 100, 2) if (btc_chg_usd and base_spot) else 0.0
+
+        p1_shift_usd = round(final_p1 - base_p1, 2) if (final_p1 and base_p1) else 0.0
+        p1_shift_pct = round(p1_shift_usd / base_p1 * 100, 2) if (p1_shift_usd and base_p1) else 0.0
+
+        c1_shift_usd = round(final_c1 - base_c1, 2) if (final_c1 and base_c1) else 0.0
+        c1_shift_pct = round(c1_shift_usd / base_c1 * 100, 2) if (c1_shift_usd and base_c1) else 0.0
+
+        # Containment & Wall Distance Evaluation
+        settled_in_7d_range = None
+        status = "in_progress"
+        badge = "⏳ กำลังติดตาม"
+        badge_class = "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+        dist_to_c1_pct = None
+        dist_to_p1_pct = None
+
+        if base_c1 and current_spot:
+            dist_to_c1_pct = round((current_spot - base_c1) / base_c1 * 100, 2)
+        if base_p1 and current_spot:
+            dist_to_p1_pct = round((current_spot - base_p1) / base_p1 * 100, 2)
+
+        if is_settled and base_p1 and base_c1 and settle_price:
+            if base_p1 <= settle_price <= base_c1:
+                settled_in_7d_range = True
+                status = "contained"
+                badge = "🛡️ Settle ในกรอบ 7D"
+                badge_class = "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+            elif settle_price > base_c1:
+                settled_in_7d_range = False
+                status = "call_breakout"
+                badge = f"🐂 ทะลุ Call บน (+{dist_to_c1_pct}%)"
+                badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+            else:
+                settled_in_7d_range = False
+                status = "put_breakdown"
+                badge = f"🐻 หลุด Put ล่าง ({dist_to_p1_pct}%)"
+                badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+        elif not is_settled and base_p1 and base_c1 and current_spot:
+            if base_p1 <= current_spot <= base_c1:
+                badge = "🛡️ ปัจจุบันอยู่ในกรอบ"
+                badge_class = "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+            elif current_spot > base_c1:
+                badge = f"⚠️ ปัจจุบันเหนือ Call (+{dist_to_c1_pct}%)"
+                badge_class = "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+            else:
+                badge = f"⚠️ ปัจจุบันใต้ Put ({dist_to_p1_pct}%)"
+                badge_class = "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+
+        base_dt = datetime.strptime(base_snap["snapshot_time_bkk"][:10], "%Y-%m-%d")
+        exp_dt = datetime.strptime(exp, "%Y-%m-%d")
+        tracking_days = max(1, (exp_dt - base_dt).days)
+
+        weekly_items.append({
+            "expiry_date": exp,
+            "expiry_type": exp_type,
+            "is_settled": is_settled,
+            "settle_price": settle_price,
+            "current_spot": current_spot,
+            "tracking_days": tracking_days,
+            "base_date": base_snap["snapshot_time_bkk"],
+            "base_spot": base_spot,
+            "base_p1": base_p1,
+            "base_c1": base_c1,
+            "base_mp": base_mp,
+            "base_width": base_width,
+            "final_p1": final_p1,
+            "final_c1": final_c1,
+            "final_mp": final_mp,
+            "btc_chg_usd": btc_chg_usd,
+            "btc_chg_pct": btc_chg_pct,
+            "p1_shift_usd": p1_shift_usd,
+            "p1_shift_pct": p1_shift_pct,
+            "c1_shift_usd": c1_shift_usd,
+            "c1_shift_pct": c1_shift_pct,
+            "settled_in_7d_range": settled_in_7d_range,
+            "status": status,
+            "badge": badge,
+            "badge_class": badge_class,
+            "dist_to_c1_pct": dist_to_c1_pct,
+            "dist_to_p1_pct": dist_to_p1_pct,
+        })
+
+    # Summary metrics for settled weekly items
+    settled_items = [w for w in weekly_items if w["is_settled"] and w["settled_in_7d_range"] is not None]
+    n_settled = len(settled_items)
+    contained_count = sum(1 for w in settled_items if w["settled_in_7d_range"] is True)
+    contained_7d_rate = round(contained_count / n_settled * 100.0, 1) if n_settled > 0 else 100.0
+    avg_width_7d = round(sum(w["base_width"] for w in settled_items if w["base_width"]) / n_settled, 2) if n_settled > 0 else 14.7
+
+    # Active items currently underway
+    active_items = [w for w in weekly_items if not w["is_settled"]]
+    current_weekly = active_items[0] if active_items else None
+
+    return {
+        "weekly_items": list(reversed(weekly_items)),
+        "settled_items": settled_items,
+        "active_items": active_items,
+        "current_weekly": current_weekly,
+        "n_settled": n_settled,
+        "contained_count": contained_count,
+        "contained_7d_rate": contained_7d_rate,
+        "avg_width_7d": avg_width_7d,
+    }
