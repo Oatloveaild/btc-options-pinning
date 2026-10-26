@@ -290,6 +290,13 @@ def run_settlement(target_date_str: Optional[str] = None) -> Dict[str, Any]:
         fallback_used=fallback_used,
     )
 
+    # Settle paper trades and roll next active cycle
+    try:
+        from src.paper_trade import settle_active_paper_trades
+        settle_active_paper_trades(target_date_str, settlement_price)
+    except Exception as e:
+        logger.warning(f"Paper trade settlement error: {e}")
+
     # Auto-backup database to Google Drive after settlement
     try:
         from src.gdrive_backup import backup_database
