@@ -29,6 +29,11 @@ def init_db():
             total_oi REAL,
             total_oi_usd REAL,
             put_call_oi_ratio REAL,
+            total_call_volume REAL,
+            total_put_volume REAL,
+            total_volume REAL,
+            total_volume_usd REAL,
+            put_call_volume_ratio REAL,
             max_pain REAL,
             price_minus_max_pain REAL,
             price_vs_max_pain_pct REAL,
@@ -207,6 +212,11 @@ def init_db():
             total_oi REAL,
             total_oi_usd REAL,
             put_call_oi_ratio REAL,
+            total_call_volume REAL,
+            total_put_volume REAL,
+            total_volume REAL,
+            total_volume_usd REAL,
+            put_call_volume_ratio REAL,
             max_pain REAL,
             price_vs_max_pain_pct REAL,
             top_oi_strike REAL,
@@ -259,6 +269,23 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_oi_by_strike_snap ON oi_by_strike(snapshot_time_bkk, expiry_date)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_big_expiries_snap ON big_expiries(snapshot_time_bkk)")
+
+        # Auto-migration for snapshots volume columns
+        cursor.execute("PRAGMA table_info(snapshots)")
+        existing_cols = set(r["name"] if isinstance(r, dict) else r[1] for r in cursor.fetchall())
+        volume_cols = {
+            "total_call_volume": "REAL",
+            "total_put_volume": "REAL",
+            "total_volume": "REAL",
+            "total_volume_usd": "REAL",
+            "put_call_volume_ratio": "REAL",
+        }
+        for v_col, v_type in volume_cols.items():
+            if v_col not in existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE snapshots ADD COLUMN {v_col} {v_type}")
+                except Exception:
+                    pass
 
         conn.commit()
 
