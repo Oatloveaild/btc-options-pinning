@@ -520,19 +520,19 @@
     <!-- P1-C1 Range & Event Comparison -->
     <div>
       <div class="flex items-center justify-between mb-2">
-        <div class="text-xs font-bold uppercase text-slate-400">สถิติการ Settle ในกรอบ P1–C1</div>
-        <a href="/stats" class="text-[10px] text-blue-400 hover:text-blue-300 font-semibold">ดูเจาะลึกรายสัปดาห์ 7D ➔</a>
+        <div class="text-xs font-bold uppercase text-slate-400">สถิติการ Settle ในกรอบ & ความกว้างเฉลี่ย</div>
+        <a href="/stats" class="text-[10px] text-blue-400 hover:text-blue-300 font-semibold">ดูเจาะลึก 7D & C2/P2 ➔</a>
       </div>
       <div class="grid grid-cols-2 gap-2 text-center text-xs mb-3">
         <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
-          <div class="text-slate-400">📌 กรอบรายวัน (Daily)</div>
+          <div class="text-[10px] text-teal-300 font-bold uppercase">📌 กรอบรายวัน (Daily)</div>
           <div class="text-xl font-bold text-emerald-400 mt-1">{{ overall_stats.range.in_range_pct }}%</div>
-          <div class="text-[10px] text-slate-400 mt-0.5">กว้างเฉลี่ย {{ overall_stats.range.avg_width }}%</div>
+          <div class="text-[10px] text-cyan-300 font-semibold mt-0.5">กว้างเฉลี่ย: {{ overall_stats.range.avg_width }}%</div>
         </div>
         <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
-          <div class="text-slate-400">🗓️ กรอบสัปดาห์ (7D Forward)</div>
+          <div class="text-[10px] text-blue-300 font-bold uppercase">🗓️ กรอบ 7 วัน (Weekly 7D)</div>
           <div class="text-xl font-bold text-emerald-400 mt-1">{{ weekly_horizon.contained_7d_rate if weekly_horizon else "100.0" }}%</div>
-          <div class="text-[10px] text-slate-400 mt-0.5">กว้างเฉลี่ย {{ weekly_horizon.avg_width_7d if weekly_horizon else "14.7" }}%</div>
+          <div class="text-[10px] text-indigo-300 font-semibold mt-0.5">กว้างเฉลี่ย: {{ weekly_horizon.avg_width_7d if weekly_horizon else "14.7" }}%</div>
         </div>
       </div>
       <div class="overflow-x-auto">
