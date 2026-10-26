@@ -37,6 +37,13 @@ def on_startup():
 
 # ---------------- API Endpoints ----------------
 
+@app.get("/ping")
+@app.get("/health")
+def api_ping():
+    """Ultra-lightweight keep-alive endpoint for cron-job.org and uptime monitors (<20 bytes)."""
+    return {"status": "ok"}
+
+
 @app.post("/api/scheduler/trigger")
 def api_trigger(action: str = Query("snapshot")):
     try:
