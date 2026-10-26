@@ -182,6 +182,8 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                 cur_st = conn.execute(
                     """
                     SELECT strike, call_oi, put_oi, total_oi, call_oi_usd, put_oi_usd,
+                           call_volume_24h, put_volume_24h,
+                           ROUND(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0), 2) as total_volume_24h,
                            call_gex_usd, put_gex_usd, net_gex_usd, call_iv, put_iv
                     FROM oi_by_strike
                     WHERE snapshot_time_bkk = ? AND expiry_date = ?
@@ -190,6 +192,12 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                     (s["snapshot_time_bkk"], s["expiry_date"]),
                 )
                 s["strikes"] = [dict(r) for r in cur_st.fetchall()]
+                tot_c_vol = round(sum(st.get("call_volume_24h") or 0.0 for st in s["strikes"]), 2)
+                tot_p_vol = round(sum(st.get("put_volume_24h") or 0.0 for st in s["strikes"]), 2)
+                s["total_call_volume"] = s.get("total_call_volume") or tot_c_vol
+                s["total_put_volume"] = s.get("total_put_volume") or tot_p_vol
+                s["total_volume"] = s.get("total_volume") or round(tot_c_vol + tot_p_vol, 2)
+                s["put_call_volume_ratio"] = s.get("put_call_volume_ratio") or (round(tot_p_vol / tot_c_vol, 2) if tot_c_vol > 0 else 0.0)
         else:
             # Aggregated timeline across all expiries at each distinct snapshot time
             from src.options_math import calculate_max_pain
@@ -213,6 +221,9 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                            ROUND(SUM(total_oi), 2) as total_oi,
                            ROUND(SUM(call_oi_usd), 2) as call_oi_usd,
                            ROUND(SUM(put_oi_usd), 2) as put_oi_usd,
+                           ROUND(SUM(call_volume_24h), 2) as call_volume_24h,
+                           ROUND(SUM(put_volume_24h), 2) as put_volume_24h,
+                           ROUND(SUM(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0)), 2) as total_volume_24h,
                            ROUND(SUM(call_gex_usd), 2) as call_gex_usd,
                            ROUND(SUM(put_gex_usd), 2) as put_gex_usd,
                            ROUND(SUM(net_gex_usd), 2) as net_gex_usd,
@@ -234,6 +245,11 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                 tot_oi = sum(st["total_oi"] for st in agg_strikes)
                 tot_net_gex = sum(st["net_gex_usd"] or 0 for st in agg_strikes)
 
+                tot_c_vol = round(sum(st.get("call_volume_24h") or 0.0 for st in agg_strikes), 2)
+                tot_p_vol = round(sum(st.get("put_volume_24h") or 0.0 for st in agg_strikes), 2)
+                tot_vol = round(tot_c_vol + tot_p_vol, 2)
+                pc_vol = round(tot_p_vol / tot_c_vol, 2) if tot_c_vol > 0 else 0.0
+
                 c1_strike = max(agg_strikes, key=lambda x: x["call_oi"])["strike"] if agg_strikes else 0
                 p1_strike = max(agg_strikes, key=lambda x: x["put_oi"])["strike"] if agg_strikes else 0
                 mp = calculate_max_pain(agg_strikes)
@@ -248,6 +264,10 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                     "total_put_oi": tot_put,
                     "total_oi": tot_oi,
                     "put_call_oi_ratio": round(tot_put / tot_call, 2) if tot_call > 0 else 0.0,
+                    "total_call_volume": tot_c_vol,
+                    "total_put_volume": tot_p_vol,
+                    "total_volume": tot_vol,
+                    "put_call_volume_ratio": pc_vol,
                     "net_gex_usd": tot_net_gex,
                     "call1_strike": c1_strike,
                     "put1_strike": p1_strike,
