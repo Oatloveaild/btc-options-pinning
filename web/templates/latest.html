@@ -166,10 +166,19 @@
         <strong class="text-emerald-400 font-bold" id="headCallOI">{{ "{:,.0f}".format(snap.total_call_oi) }}</strong>
       </div>
       <div class="flex items-center space-x-1.5">
-        <span class="text-slate-400">P/C</span>
+        <span class="text-slate-400">P/C OI</span>
         <strong class="text-white font-bold" id="headPC">{{ snap.put_call_oi_ratio }}</strong>
       </div>
+      <div class="flex items-center space-x-1.5 border-l border-slate-700/60 pl-3">
+        <span class="text-slate-400">Vol 24h</span>
+        <strong class="text-cyan-400 font-bold" id="headTotalVol">{{ "{:,.0f}".format(snap.total_volume or 0) }}</strong>
+        <span class="text-[10px] text-slate-500">BTC</span>
+      </div>
       <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">P/C Vol</span>
+        <strong class="text-cyan-300 font-bold" id="headPCVol">{{ snap.put_call_volume_ratio or "-" }}</strong>
+      </div>
+      <div class="flex items-center space-x-1.5 border-l border-slate-700/60 pl-3">
         <span class="text-slate-400">BTC Spot</span>
         <strong class="text-white font-bold text-sm" id="headSpot">${{ "{:,.1f}".format(snap.index_price) }}</strong>
       </div>
@@ -902,6 +911,15 @@
               title: (items) => `Strike: $${Number(items[0].label).toLocaleString()}`,
               label: (item) => {
                 if (item.dataset.label.includes('IV')) return `IV: ${item.raw ? Number(item.raw).toFixed(1) + '%' : '-'}`;
+                const snap = timelineData[currentIndex];
+                const st = (snap && snap.strikes) ? snap.strikes[item.dataIndex] : null;
+                if (item.datasetIndex === 0) {
+                  const vol = st ? (st.call_volume_24h || 0) : 0;
+                  return `Call OI: ${Number(item.raw).toLocaleString()} BTC (Vol 24h: ${Number(vol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC)`;
+                } else if (item.datasetIndex === 1) {
+                  const vol = st ? (st.put_volume_24h || 0) : 0;
+                  return `Put OI: ${Number(item.raw).toLocaleString()} BTC (Vol 24h: ${Number(vol).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} BTC)`;
+                }
                 return `${item.dataset.label}: ${Number(item.raw).toLocaleString()} BTC`;
               }
             }
@@ -1045,6 +1063,13 @@
     document.getElementById('headPutOI').textContent = Number(snap.total_put_oi).toLocaleString(undefined, {maximumFractionDigits: 0});
     document.getElementById('headCallOI').textContent = Number(snap.total_call_oi).toLocaleString(undefined, {maximumFractionDigits: 0});
     document.getElementById('headPC').textContent = snap.put_call_oi_ratio;
+
+    const totVol = snap.total_volume || 0;
+    const pcVol = snap.put_call_volume_ratio || '-';
+    const volEl = document.getElementById('headTotalVol');
+    if (volEl) volEl.textContent = Number(totVol).toLocaleString(undefined, {maximumFractionDigits: 0});
+    const pcVolEl = document.getElementById('headPCVol');
+    if (pcVolEl) pcVolEl.textContent = pcVol;
 
     const spot = snap.index_price;
     document.getElementById('headSpot').textContent = `$${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`;
