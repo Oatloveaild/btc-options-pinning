@@ -190,11 +190,115 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
         else:
             expiries = all_exp
 
-        # Filter query for snapshots
-        if expiry_date and expiry_date != "all":
+        # Compute dynamic group aggregations
+        from datetime import datetime, timezone, timedelta
+        tz_bkk = timezone(timedelta(hours=7))
+        now_bkk = datetime.now(tz_bkk)
+        today_str = now_bkk.strftime("%Y-%m-%d")
+        tomorrow_str = (now_bkk + timedelta(days=1)).strftime("%Y-%m-%d")
+        weekday = now_bkk.weekday()
+        days_to_friday = (4 - weekday) % 7
+        friday_str = (now_bkk + timedelta(days=days_to_friday)).strftime("%Y-%m-%d")
+        month_prefix = now_bkk.strftime("%Y-%m")
+
+        active_dates = [e["expiry_date"] for e in expiries]
+
+        # 1. Today / Tomorrow Group
+        today_tmrw_dates = [d for d in active_dates if d <= tomorrow_str]
+        if not today_tmrw_dates and active_dates:
+            today_tmrw_dates = active_dates[:1]
+
+        # 2. This Week Group (up to this Friday)
+        weekly_dates = [d for d in active_dates if d <= friday_str]
+        if not weekly_dates and active_dates:
+            weekly_dates = active_dates[:min(4, len(active_dates))]
+
+        # 3. This Month Group (current month)
+        monthly_dates = [d for d in active_dates if d.startswith(month_prefix)]
+        if not monthly_dates and active_dates:
+            monthly_dates = weekly_dates
+
+        # 4. All Group
+        all_dates = active_dates
+
+        def sum_metrics_for_dates(date_list):
+            oi_sum = sum(e.get("latest_total_oi") or 0.0 for e in expiries if e["expiry_date"] in date_list)
+            vol_sum = sum(e.get("latest_total_volume") or 0.0 for e in expiries if e["expiry_date"] in date_list)
+            return round(oi_sum, 2), round(vol_sum, 2)
+
+        g_today_oi, g_today_vol = sum_metrics_for_dates(today_tmrw_dates)
+        g_week_oi, g_week_vol = sum_metrics_for_dates(weekly_dates)
+        g_month_oi, g_month_vol = sum_metrics_for_dates(monthly_dates)
+        g_all_oi, g_all_vol = sum_metrics_for_dates(all_dates)
+
+        groups_meta = {
+            "group_today": {
+                "id": "group_today",
+                "label": "วันนี้/พรุ่งนี้",
+                "tag": "รวบ 2 วัน",
+                "dates": today_tmrw_dates,
+                "latest_total_oi": g_today_oi,
+                "latest_total_volume": g_today_vol,
+            },
+            "group_weekly": {
+                "id": "group_weekly",
+                "label": "สัปดาห์นี้",
+                "tag": f"รวบถึงศุกร์ {friday_str}",
+                "dates": weekly_dates,
+                "latest_total_oi": g_week_oi,
+                "latest_total_volume": g_week_vol,
+            },
+            "group_monthly": {
+                "id": "group_monthly",
+                "label": "เดือนนี้",
+                "tag": f"รวบทั้งเดือน {month_prefix}",
+                "dates": monthly_dates,
+                "latest_total_oi": g_month_oi,
+                "latest_total_volume": g_month_vol,
+            },
+            "all": {
+                "id": "all",
+                "label": "รวมทุก Expiry",
+                "tag": "All Aggregated",
+                "dates": all_dates,
+                "latest_total_oi": g_all_oi,
+                "latest_total_volume": g_all_vol,
+            }
+        }
+
+        # Determine target dates and grouping mode
+        is_group = False
+        target_dates = []
+        group_display_name = ""
+        group_type_tag = ""
+
+        if expiry_date in groups_meta:
+            is_group = True
+            grp = groups_meta[expiry_date]
+            target_dates = grp["dates"]
+            group_display_name = f"รวบกลุ่ม: {grp['label']} ({grp['tag']})"
+            group_type_tag = expiry_date
+        elif expiry_date and ("," in expiry_date):
+            is_group = True
+            target_dates = [d.strip() for d in expiry_date.split(",") if d.strip()]
+            group_display_name = f"รวบกลุ่ม ({len(target_dates)} สัญญา)"
+            group_type_tag = "custom_group"
+        elif expiry_date and expiry_date not in ("all", "all_expiries"):
+            # Single individual expiry date
+            is_group = False
+            target_dates = [expiry_date]
+        else:
+            # Default to all active expiries
+            is_group = True
+            target_dates = all_dates
+            group_display_name = "รวมทุก Expiry ในอนาคต (All Aggregated)"
+            group_type_tag = "all"
+
+        # Query snapshots
+        if not is_group and target_dates:
             cur_s = conn.execute(
                 "SELECT * FROM snapshots WHERE expiry_date = ? ORDER BY snapshot_time_bkk ASC",
-                (expiry_date,),
+                (target_dates[0],),
             )
             snaps = [dict(r) for r in cur_s.fetchall()]
 
@@ -220,22 +324,24 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                 s["total_volume"] = s.get("total_volume") or round(tot_c_vol + tot_p_vol, 2)
                 s["put_call_volume_ratio"] = s.get("put_call_volume_ratio") or (round(tot_p_vol / tot_c_vol, 2) if tot_c_vol > 0 else 0.0)
         else:
-            # Aggregated timeline across all expiries at each distinct snapshot time
+            # Aggregated timeline across target_dates at each distinct snapshot time
             from src.options_math import calculate_max_pain
 
-            cur_times = conn.execute("""
+            placeholders = ",".join("?" for _ in target_dates) if target_dates else "'__none__'"
+            cur_times = conn.execute(f"""
                 SELECT snapshot_time_bkk, MAX(index_price) as index_price,
                        label, MAX(dvol) as dvol, MAX(atm_iv) as atm_iv
                 FROM snapshots
+                WHERE expiry_date IN ({placeholders})
                 GROUP BY snapshot_time_bkk
                 ORDER BY snapshot_time_bkk ASC
-            """)
+            """, tuple(target_dates) if target_dates else ())
             times_rows = [dict(r) for r in cur_times.fetchall()]
             snaps = []
             for t_row in times_rows:
                 t_bkk = t_row["snapshot_time_bkk"]
                 cur_agg_st = conn.execute(
-                    """
+                    f"""
                     SELECT strike,
                            ROUND(SUM(call_oi), 2) as call_oi,
                            ROUND(SUM(put_oi), 2) as put_oi,
@@ -252,10 +358,11 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                            ROUND(AVG(put_iv), 1) as put_iv
                     FROM oi_by_strike
                     WHERE snapshot_time_bkk = ?
+                      AND expiry_date IN ({placeholders})
                     GROUP BY strike
                     ORDER BY strike ASC
                     """,
-                    (t_bkk,),
+                    (t_bkk, *target_dates),
                 )
                 agg_strikes = [dict(r) for r in cur_agg_st.fetchall()]
                 if not agg_strikes:
@@ -277,9 +384,9 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
 
                 snaps.append({
                     "snapshot_time_bkk": t_bkk,
-                    "label": t_row["label"] or "all",
-                    "expiry_date": "All Expiries",
-                    "expiry_type": "all",
+                    "label": t_row["label"] or "group",
+                    "expiry_date": group_display_name,
+                    "expiry_type": group_type_tag,
                     "index_price": t_row["index_price"] or 0.0,
                     "total_call_oi": tot_call,
                     "total_put_oi": tot_put,
@@ -299,7 +406,7 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                     "strikes": agg_strikes,
                 })
 
-    return {"expiries": expiries, "snapshots": snaps}
+    return {"expiries": expiries, "groups": groups_meta, "snapshots": snaps}
 
 
 # ---------------- CSV Exports ----------------
