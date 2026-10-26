@@ -14,6 +14,8 @@ from src.settlement_analytics import (
     analyze_news_sentiment,
     analyze_pinning_and_gex_flow,
     compute_settlement_flow_stats,
+    compute_stats_for_subset,
+    compute_weekly_horizon_stats,
     get_expiry_evolution_milestones,
     get_full_settlement_history,
 )
@@ -620,90 +622,6 @@ def page_latest(request: Request, expiry_date: Optional[str] = None):
         cur_dates = conn.execute("SELECT DISTINCT expiry_date FROM snapshots ORDER BY expiry_date DESC")
         all_dates = [r["expiry_date"] for r in cur_dates.fetchall()]
 
-    # Helper function for stats calculation
-    def compute_stats_for_subset(records):
-        valid_mp = [r for r in records if r.get("max_pain") is not None]
-        n_mp = len(valid_mp)
-        if n_mp == 0:
-            return None
-
-        w05_mp = sum(r.get("[within_0.5pct_max_pain]") or r.get("within_0.5pct_max_pain") or 0 for r in valid_mp)
-        w1_mp = sum(r.get("within_1pct_max_pain") or 0 for r in valid_mp)
-        avg_dist_mp = (
-            sum(abs(r["dist_max_pain_pct"]) for r in valid_mp if r.get("dist_max_pain_pct") is not None) / n_mp
-            if n_mp > 0 else 0.0
-        )
-
-        valid_top = [r for r in records if r.get("top_oi_strike") is not None]
-        n_top = len(valid_top)
-        w05_top = sum(r.get("[within_0.5pct_top_oi]") or r.get("within_0.5pct_top_oi") or 0 for r in valid_top)
-        w1_top = sum(r.get("within_1pct_top_oi") or 0 for r in valid_top)
-        avg_dist_top = (
-            sum(abs(r["dist_top_oi_pct"]) for r in valid_top if r.get("dist_top_oi_pct") is not None) / n_top
-            if n_top > 0 else 0.0
-        )
-
-        valid_c1 = [r for r in records if r.get("call1_strike") is not None and r.get("call1_dist_pct") is not None]
-        n_c1 = len(valid_c1)
-        w05_c1 = sum(r.get("[call1_within_0.5pct]") or r.get("call1_within_0.5pct") or 0 for r in valid_c1)
-        w1_c1 = sum(r.get("call1_within_1pct") or 0 for r in valid_c1)
-        avg_dist_c1 = sum(abs(r["call1_dist_pct"]) for r in valid_c1) / n_c1 if n_c1 > 0 else 0.0
-
-        valid_p1 = [r for r in records if r.get("put1_strike") is not None and r.get("put1_dist_pct") is not None]
-        n_p1 = len(valid_p1)
-        w05_p1 = sum(r.get("[put1_within_0.5pct]") or r.get("put1_within_0.5pct") or 0 for r in valid_p1)
-        w1_p1 = sum(r.get("put1_within_1pct") or 0 for r in valid_p1)
-        avg_dist_p1 = sum(abs(r["put1_dist_pct"]) for r in valid_p1) / n_p1 if n_p1 > 0 else 0.0
-
-        valid_flip = [r for r in records if r.get("snap_gamma_flip") is not None and r.get("dist_gamma_flip_pct") is not None]
-        n_flip = len(valid_flip)
-        w05_flip = sum(1 for r in valid_flip if abs(r["dist_gamma_flip_pct"]) <= 0.5)
-        w1_flip = sum(1 for r in valid_flip if abs(r["dist_gamma_flip_pct"]) <= 1.0)
-        avg_dist_flip = sum(abs(r["dist_gamma_flip_pct"]) for r in valid_flip) / n_flip if n_flip > 0 else 0.0
-
-        valid_range = [r for r in records if r.get("settled_in_put1_call1_range") is not None]
-        n_range = len(valid_range)
-        in_range_count = sum(r.get("settled_in_put1_call1_range") or 0 for r in valid_range)
-        avg_range_width = (
-            sum(r["range_width_pct"] for r in valid_range if r.get("range_width_pct") is not None) / n_range
-            if n_range > 0 else 0.0
-        )
-
-        return {
-            "n": n_mp,
-            "max_pain": {
-                "pct_05": round(w05_mp / n_mp * 100.0, 1) if n_mp > 0 else 0.0,
-                "pct_1": round(w1_mp / n_mp * 100.0, 1) if n_mp > 0 else 0.0,
-                "avg_dist": round(avg_dist_mp, 2),
-            },
-            "top_oi": {
-                "pct_05": round(w05_top / n_top * 100.0, 1) if n_top > 0 else 0.0,
-                "pct_1": round(w1_top / n_top * 100.0, 1) if n_top > 0 else 0.0,
-                "avg_dist": round(avg_dist_top, 2),
-            },
-            "call1": {
-                "pct_05": round(w05_c1 / n_c1 * 100.0, 1) if n_c1 > 0 else 0.0,
-                "pct_1": round(w1_c1 / n_c1 * 100.0, 1) if n_c1 > 0 else 0.0,
-                "avg_dist": round(avg_dist_c1, 2),
-            },
-            "put1": {
-                "pct_05": round(w05_p1 / n_p1 * 100.0, 1) if n_p1 > 0 else 0.0,
-                "pct_1": round(w1_p1 / n_p1 * 100.0, 1) if n_p1 > 0 else 0.0,
-                "avg_dist": round(avg_dist_p1, 2),
-            },
-            "gamma_flip": {
-                "pct_05": round(w05_flip / n_flip * 100.0, 1) if n_flip > 0 else 0.0,
-                "pct_1": round(w1_flip / n_flip * 100.0, 1) if n_flip > 0 else 0.0,
-                "avg_dist": round(avg_dist_flip, 2),
-                "n_flip": n_flip,
-            },
-            "range": {
-                "in_range_pct": round(in_range_count / n_range * 100.0, 1) if n_range > 0 else 0.0,
-                "avg_width": round(avg_range_width, 2),
-                "n_range": n_range,
-            },
-        }
-
     overall_stats = compute_stats_for_subset(all_results)
     daily_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "daily"])
     weekly_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "weekly"])
@@ -869,96 +787,6 @@ def page_stats(request: Request):
         cursor = conn.execute("SELECT * FROM expiry_results WHERE settlement_price IS NOT NULL")
         all_results = [dict(r) for r in cursor.fetchall()]
 
-    # Helper function to compute statistics
-    def compute_stats_for_subset(records):
-        n = len([r for r in records if r.get("max_pain") is not None])
-        if n == 0:
-            return None
-
-        # Max Pain
-        valid_mp = [r for r in records if r.get("max_pain") is not None]
-        n_mp = len(valid_mp)
-        w05_mp = sum(r.get("[within_0.5pct_max_pain]") or r.get("within_0.5pct_max_pain") or 0 for r in valid_mp)
-        w1_mp = sum(r.get("within_1pct_max_pain") or 0 for r in valid_mp)
-        avg_dist_mp = (
-            sum(abs(r["dist_max_pain_pct"]) for r in valid_mp if r.get("dist_max_pain_pct") is not None) / n_mp
-            if n_mp > 0 else 0.0
-        )
-
-        # Top OI
-        valid_top = [r for r in records if r.get("top_oi_strike") is not None]
-        n_top = len(valid_top)
-        w05_top = sum(r.get("[within_0.5pct_top_oi]") or r.get("within_0.5pct_top_oi") or 0 for r in valid_top)
-        w1_top = sum(r.get("within_1pct_top_oi") or 0 for r in valid_top)
-        avg_dist_top = (
-            sum(abs(r["dist_top_oi_pct"]) for r in valid_top if r.get("dist_top_oi_pct") is not None) / n_top
-            if n_top > 0 else 0.0
-        )
-
-        # Call 1 & Put 1
-        valid_c1 = [r for r in records if r.get("call1_strike") is not None and r.get("call1_dist_pct") is not None]
-        n_c1 = len(valid_c1)
-        w05_c1 = sum(r.get("[call1_within_0.5pct]") or r.get("call1_within_0.5pct") or 0 for r in valid_c1)
-        w1_c1 = sum(r.get("call1_within_1pct") or 0 for r in valid_c1)
-        avg_dist_c1 = sum(abs(r["call1_dist_pct"]) for r in valid_c1) / n_c1 if n_c1 > 0 else 0.0
-
-        valid_p1 = [r for r in records if r.get("put1_strike") is not None and r.get("put1_dist_pct") is not None]
-        n_p1 = len(valid_p1)
-        w05_p1 = sum(r.get("[put1_within_0.5pct]") or r.get("put1_within_0.5pct") or 0 for r in valid_p1)
-        w1_p1 = sum(r.get("put1_within_1pct") or 0 for r in valid_p1)
-        avg_dist_p1 = sum(abs(r["put1_dist_pct"]) for r in valid_p1) / n_p1 if n_p1 > 0 else 0.0
-
-        # Gamma flip
-        valid_flip = [r for r in records if r.get("snap_gamma_flip") is not None and r.get("dist_gamma_flip_pct") is not None]
-        n_flip = len(valid_flip)
-        w05_flip = sum(1 for r in valid_flip if abs(r["dist_gamma_flip_pct"]) <= 0.5)
-        w1_flip = sum(1 for r in valid_flip if abs(r["dist_gamma_flip_pct"]) <= 1.0)
-        avg_dist_flip = sum(abs(r["dist_gamma_flip_pct"]) for r in valid_flip) / n_flip if n_flip > 0 else 0.0
-
-        # P1-C1 range
-        valid_range = [r for r in records if r.get("settled_in_put1_call1_range") is not None]
-        n_range = len(valid_range)
-        in_range_count = sum(r.get("settled_in_put1_call1_range") or 0 for r in valid_range)
-        avg_range_width = (
-            sum(r["range_width_pct"] for r in valid_range if r.get("range_width_pct") is not None) / n_range
-            if n_range > 0 else 0.0
-        )
-
-        return {
-            "n": n,
-            "max_pain": {
-                "pct_05": round(w05_mp / n_mp * 100.0, 1) if n_mp > 0 else 0.0,
-                "pct_1": round(w1_mp / n_mp * 100.0, 1) if n_mp > 0 else 0.0,
-                "avg_dist": round(avg_dist_mp, 2),
-            },
-            "top_oi": {
-                "pct_05": round(w05_top / n_top * 100.0, 1) if n_top > 0 else 0.0,
-                "pct_1": round(w1_top / n_top * 100.0, 1) if n_top > 0 else 0.0,
-                "avg_dist": round(avg_dist_top, 2),
-            },
-            "call1": {
-                "pct_05": round(w05_c1 / n_c1 * 100.0, 1) if n_c1 > 0 else 0.0,
-                "pct_1": round(w1_c1 / n_c1 * 100.0, 1) if n_c1 > 0 else 0.0,
-                "avg_dist": round(avg_dist_c1, 2),
-            },
-            "put1": {
-                "pct_05": round(w05_p1 / n_p1 * 100.0, 1) if n_p1 > 0 else 0.0,
-                "pct_1": round(w1_p1 / n_p1 * 100.0, 1) if n_p1 > 0 else 0.0,
-                "avg_dist": round(avg_dist_p1, 2),
-            },
-            "gamma_flip": {
-                "pct_05": round(w05_flip / n_flip * 100.0, 1) if n_flip > 0 else 0.0,
-                "pct_1": round(w1_flip / n_flip * 100.0, 1) if n_flip > 0 else 0.0,
-                "avg_dist": round(avg_dist_flip, 2),
-                "n_flip": n_flip,
-            },
-            "range": {
-                "in_range_pct": round(in_range_count / n_range * 100.0, 1) if n_range > 0 else 0.0,
-                "avg_width": round(avg_range_width, 2),
-                "n_range": n_range,
-            },
-        }
-
     overall_stats = compute_stats_for_subset(all_results)
     daily_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "daily"])
     weekly_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "weekly"])
@@ -967,7 +795,6 @@ def page_stats(request: Request):
     with_events_stats = compute_stats_for_subset([r for r in all_results if r.get("has_high_impact_event") == 1])
     no_events_stats = compute_stats_for_subset([r for r in all_results if not r.get("has_high_impact_event")])
 
-    from src.settlement_analytics import compute_weekly_horizon_stats
     weekly_horizon = compute_weekly_horizon_stats(conn)
 
     # Distribution data for chart
