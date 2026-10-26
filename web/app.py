@@ -40,6 +40,12 @@ def on_startup():
     except Exception as e:
         print(f"[STARTUP WARNING] Google Drive restore check failed: {e}")
     init_db()
+    try:
+        from src.paper_trade import init_paper_trade_tables, open_active_paper_trades
+        init_paper_trade_tables()
+        open_active_paper_trades()
+    except Exception as e:
+        print(f"[STARTUP WARNING] Paper trade startup check failed: {e}")
     init_scheduler()
 
 
@@ -892,4 +898,66 @@ def page_events(request: Request):
             "events": events_list,
             "logs": logs,
         },
+    )
+
+
+@app.get("/paper_trade", response_class=HTMLResponse)
+def page_paper_trade(request: Request):
+    """Systematic 4-portfolio paper trading dashboard ($10,000 initial capital each)."""
+    from src.paper_trade import get_all_portfolios_data
+    data = get_all_portfolios_data()
+    return templates.TemplateResponse(
+        request=request,
+        name="paper_trade.html",
+        context={
+            "page": "paper_trade",
+            "portfolios": data["portfolios"],
+            "active_trades": data["active_trades"],
+            "history": data["history"],
+            "chart": data["chart"],
+            "current_spot": data["current_spot"],
+        },
+    )
+
+
+@app.get("/api/paper_trade/data")
+def api_paper_trade_data():
+    from src.paper_trade import get_all_portfolios_data
+    return get_all_portfolios_data()
+
+
+@app.post("/api/paper_trade/reset")
+def api_paper_trade_reset():
+    from src.paper_trade import reset_paper_trades
+    return reset_paper_trades()
+
+
+@app.get("/api/paper_trade/export_csv")
+def api_paper_trade_export_csv():
+    from src.paper_trade import get_all_portfolios_data
+    data = get_all_portfolios_data()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Expiry Date", "Cycle Type", "Portfolio ID", "Portfolio Name",
+        "Call Strike", "Call Size BTC", "Call Premium USD",
+        "Put Strike", "Put Size BTC", "Put Premium USD",
+        "Total Premium USD", "Settlement Price", "Status",
+        "Net PnL USD", "Net PnL Pct", "Equity After USD", "Outcome Note"
+    ])
+    for h in data["history"]:
+        writer.writerow([
+            h.get("expiry_date"), h.get("cycle_type"), h.get("portfolio_id"), h.get("portfolio_name"),
+            h.get("call_strike"), h.get("call_size_btc"), h.get("call_premium_usd"),
+            h.get("put_strike"), h.get("put_size_btc"), h.get("put_premium_usd"),
+            h.get("total_premium_collected_usd"), h.get("settlement_price"), h.get("status"),
+            h.get("net_pnl_usd"), h.get("net_pnl_pct"), h.get("equity_after_usd"), h.get("outcome_note")
+        ])
+    output.seek(0)
+    now_str = datetime.now(BKK_TZ).strftime("%Y%m%d_%H%M")
+    filename = f"btc_option_paper_trades_{now_str}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
