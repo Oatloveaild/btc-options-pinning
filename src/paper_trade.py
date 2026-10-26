@@ -186,7 +186,7 @@ def calculate_portfolio_metrics(portfolio_id: int):
         # Equity history for Drawdown and Sharpe
         cur.execute(
             """
-            SELECT equity_usd, daily_pnl_pct
+            SELECT equity_usd, btc_amount, cash_usd, daily_pnl_pct
             FROM paper_equity_history
             WHERE portfolio_id = ?
             ORDER BY record_date ASC
@@ -199,10 +199,16 @@ def calculate_portfolio_metrics(portfolio_id: int):
         peak = INITIAL_CAPITAL
         daily_returns = []
         last_equity = INITIAL_CAPITAL
+        last_btc = 5000.0 / 81000.0
+        last_cash = 5000.0
 
         for r in eq_rows:
             eq = r["equity_usd"]
             last_equity = eq
+            if r["btc_amount"] is not None:
+                last_btc = r["btc_amount"]
+            if r["cash_usd"] is not None:
+                last_cash = r["cash_usd"]
             if eq > peak:
                 peak = eq
             dd = (peak - eq) / peak * 100.0 if peak > 0 else 0.0
@@ -229,6 +235,8 @@ def calculate_portfolio_metrics(portfolio_id: int):
             SET total_equity_usd = ?,
                 total_pnl_usd = ?,
                 total_pnl_pct = ?,
+                current_cash_usd = ?,
+                current_btc = ?,
                 total_trades = ?,
                 winning_trades = ?,
                 losing_trades = ?,
@@ -240,7 +248,9 @@ def calculate_portfolio_metrics(portfolio_id: int):
             WHERE id = ?
             """,
             (
-                round(last_equity, 2), pnl_usd, pnl_pct, total_t, wins, losses,
+                round(last_equity, 2), pnl_usd, pnl_pct,
+                round(last_cash, 2), round(last_btc, 4),
+                total_t, wins, losses,
                 win_rate, total_prem, round(max_dd, 2), sharpe,
                 datetime.now(BKK_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                 portfolio_id
@@ -339,6 +349,14 @@ def backfill_paper_trades_from_history():
 
         conn.commit()
 
+    with get_db() as conn:
+        for pid in (1, 2, 3, 4):
+            conn.execute(
+                "UPDATE paper_portfolios SET current_cash_usd = ?, current_btc = ?, total_equity_usd = ? WHERE id = ?",
+                (round(port_state[pid]["cash"], 2), round(port_state[pid]["btc"], 4), round(port_state[pid]["equity"], 2), pid)
+            )
+        conn.commit()
+
     for pid in (1, 2, 3, 4):
         calculate_portfolio_metrics(pid)
 
@@ -413,6 +431,9 @@ def _simulate_trade_cycle(
         # Full win in range
         cash_held = cash_held + tot_prem - fee_usd
         tot_eq = cash_held + (btc_held * settle)
+        target_btc_usd = tot_eq * 0.5
+        btc_held = target_btc_usd / settle
+        cash_held = tot_eq * 0.5
 
     eq_after = tot_eq
     net_pnl = eq_after - eq_before
@@ -584,16 +605,18 @@ def _create_active_trade(
     cur.execute("SELECT current_cash_usd, current_btc, total_equity_usd FROM paper_portfolios WHERE id = ?", (portfolio_id,))
     p_row = cur.fetchone()
 
-    cash = p_row["current_cash_usd"] if p_row else 5000.0
-    btc = p_row["current_btc"] if p_row and p_row["current_btc"] > 0 else (5000.0 / spot)
-    equity = p_row["total_equity_usd"] if p_row else INITIAL_CAPITAL
+    equity = p_row["total_equity_usd"] if p_row and p_row["total_equity_usd"] > 0 else INITIAL_CAPITAL
+    cash = p_row["current_cash_usd"] if p_row and p_row["current_cash_usd"] > 0 else (equity * 0.5)
+    btc = p_row["current_btc"] if p_row and p_row["current_btc"] > 0 else ((equity * 0.5) / spot)
 
     c_k = call_item["strike"]
     p_k = put_item["strike"]
 
-    # Sizes
-    call_size = btc
-    put_size = cash / p_k if p_k > 0 else (cash / spot)
+    # Sell Call on 100% of BTC held (Covered Call)
+    call_size = round(btc, 4)
+
+    # Sell Put on 100% of Cash held (Cash-Secured Put)
+    put_size = round(cash / p_k, 4) if p_k > 0 else round(cash / spot, 4)
 
     # Realistic premium: use bid if available > 0, else mark
     c_prem_btc = call_item.get("bid_btc") or call_item["mark_btc"]
@@ -646,6 +669,26 @@ def get_all_portfolios_data() -> Dict[str, Any]:
         cur.execute("SELECT * FROM paper_portfolios ORDER BY id ASC")
         ports = [dict(r) for r in cur.fetchall()]
 
+        # Compute live spot and ensure realistic 50/50 BTC and Cash allocation
+        try:
+            client = DeribitClient()
+            book_items = client.get_book_summary_by_currency("BTC", kind="option")
+            cur_spot = float(book_items[0].get("underlying_price", 81000.0))
+            book_map = {x["instrument_name"]: x for x in book_items}
+        except Exception:
+            cur_spot = 81000.0
+            book_map = {}
+
+        for p in ports:
+            if not p.get("current_btc") or p["current_btc"] <= 0:
+                p["current_btc"] = round((p["total_equity_usd"] * 0.5) / cur_spot, 4)
+                p["current_cash_usd"] = round(p["total_equity_usd"] * 0.5, 2)
+                conn.execute(
+                    "UPDATE paper_portfolios SET current_btc = ?, current_cash_usd = ? WHERE id = ?",
+                    (p["current_btc"], p["current_cash_usd"], p["id"])
+                )
+        conn.commit()
+
         # 2. Active Trades
         cur.execute(
             """
@@ -658,16 +701,6 @@ def get_all_portfolios_data() -> Dict[str, Any]:
         )
         active_trades = [dict(r) for r in cur.fetchall()]
 
-        # Compute live distance & mark to market for active trades
-        try:
-            client = DeribitClient()
-            book_items = client.get_book_summary_by_currency("BTC", kind="option")
-            cur_spot = float(book_items[0].get("underlying_price", 81000.0))
-            book_map = {x["instrument_name"]: x for x in book_items}
-        except Exception:
-            cur_spot = 81000.0
-            book_map = {}
-
         now_bkk = datetime.now(BKK_TZ)
 
         for at in active_trades:
@@ -676,6 +709,21 @@ def get_all_portfolios_data() -> Dict[str, Any]:
             at["current_spot"] = cur_spot
             at["dist_call_pct"] = round((c_k - cur_spot) / cur_spot * 100.0, 2)
             at["dist_put_pct"] = round((cur_spot - p_k) / cur_spot * 100.0, 2)
+
+            # Ensure active trade sizes match full 100% portfolio capacity
+            pid = at["portfolio_id"]
+            p_match = next((p for p in ports if p["id"] == pid), None)
+            if p_match and (at.get("call_size_btc", 0) <= 0 or at.get("put_size_btc", 0) <= 0):
+                at["call_size_btc"] = p_match["current_btc"]
+                at["put_size_btc"] = round(p_match["current_cash_usd"] / p_k, 4)
+                conn.execute(
+                    "UPDATE paper_trades SET call_size_btc = ?, put_size_btc = ? WHERE id = ?",
+                    (at["call_size_btc"], at["put_size_btc"], at["id"])
+                )
+
+            at["call_notional_usd"] = round(at["call_size_btc"] * cur_spot, 2)
+            at["put_notional_usd"] = round(at["put_size_btc"] * p_k, 2)
+            at["total_notional_usd"] = round(at["call_notional_usd"] + at["put_notional_usd"], 2)
 
             # Hours left
             try:
@@ -876,6 +924,16 @@ def settle_active_paper_trades(settle_date: str, settle_price: float):
 
 def reset_paper_trades():
     """Resets all paper trading records back to clean initial $10,000 state."""
+    init_spot = 81000.0
+    try:
+        client = DeribitClient()
+        bk = client.get_book_summary_by_currency("BTC", kind="option")
+        if bk and bk[0].get("underlying_price"):
+            init_spot = float(bk[0]["underlying_price"])
+    except Exception:
+        pass
+    init_btc = round(5000.0 / init_spot, 4)
+
     with get_db() as conn:
         conn.execute("DELETE FROM paper_trades")
         conn.execute("DELETE FROM paper_equity_history")
@@ -884,7 +942,7 @@ def reset_paper_trades():
             UPDATE paper_portfolios
             SET initial_capital_usd = 10000.0,
                 current_cash_usd = 5000.0,
-                current_btc = 0.0,
+                current_btc = ?,
                 total_equity_usd = 10000.0,
                 total_pnl_usd = 0.0,
                 total_pnl_pct = 0.0,
@@ -896,7 +954,8 @@ def reset_paper_trades():
                 max_drawdown_pct = 0.0,
                 sharpe_ratio = 0.0,
                 updated_at_bkk = datetime('now', '+7 hours')
-            """
+            """,
+            (init_btc,)
         )
         conn.commit()
     backfill_paper_trades_from_history()
