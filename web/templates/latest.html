@@ -233,10 +233,10 @@
         <div class="flex items-center justify-between mb-1">
           <label class="text-[10px] uppercase font-bold text-slate-400">Expiry Target (Active)</label>
           <div class="flex space-x-1 text-[10px]">
-            <button onclick="selectGrouping('today')" id="grpToday" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">วันนี้/พรุ่งนี้</button>
-            <button onclick="selectGrouping('weekly')" id="grpWeekly" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">ศุกร์นี้</button>
-            <button onclick="selectGrouping('monthly')" id="grpMonthly" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">สิ้นเดือน</button>
-            <button onclick="selectGrouping('all')" id="grpAll" class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white">ทั้งหมด</button>
+            <button onclick="selectGrouping('group_today')" id="grpToday" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold transition">วันนี้/พรุ่งนี้</button>
+            <button onclick="selectGrouping('group_weekly')" id="grpWeekly" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-transparent font-semibold transition">สัปดาห์นี้</button>
+            <button onclick="selectGrouping('group_monthly')" id="grpMonthly" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-transparent font-semibold transition">เดือนนี้</button>
+            <button onclick="selectGrouping('all')" id="grpAll" class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-transparent font-semibold transition">ทั้งหมด</button>
           </div>
         </div>
         <select id="expiryPicker" onchange="onExpiryChange(this.value)" class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 font-medium">
@@ -770,45 +770,90 @@
   let chartOI = null;
   let chartGEX = null;
   let currentMetricView = 'oi';
+  let activeGroups = {};
   let activeExpiriesList = [];
+  let currentTargetKey = 'group_today';
 
   function updateExpiryPicker() {
     const picker = document.getElementById('expiryPicker');
-    if (!picker || !activeExpiriesList || activeExpiriesList.length === 0) return;
-    const curVal = picker.value;
+    if (!picker) return;
+    const curVal = currentTargetKey || picker.value || 'group_today';
 
-    const totalMetricSum = activeExpiriesList.reduce((acc, e) => {
-      return acc + (currentMetricView === 'volume' ? (e.latest_total_volume || 0) : (e.latest_total_oi || 0));
-    }, 0);
+    let html = '';
 
-    const aggLabel = currentMetricView === 'volume'
-      ? `🌐 รวมทุก Expiry ในอนาคต (All Aggregated) • Vol: ${Math.round(totalMetricSum).toLocaleString()} BTC`
-      : `🌐 รวมทุก Expiry ในอนาคต (All Aggregated) • OI: ${Math.round(totalMetricSum).toLocaleString()} BTC`;
+    // OptGroup 1: รวบกลุ่ม (Aggregated Groups)
+    html += '<optgroup label="⚡ รวบข้อมูลเป็นกลุ่ม (Aggregated Groups)">';
+    const groupKeys = ['group_today', 'group_weekly', 'group_monthly', 'all'];
+    const groupTitles = {
+      'group_today': '⚡ วันนี้/พรุ่งนี้ (รวบ 2 วัน)',
+      'group_weekly': '📅 สัปดาห์นี้ (รวบถึงศุกร์นี้)',
+      'group_monthly': '🗓️ เดือนนี้ (รวบทั้งเดือน)',
+      'all': '🌐 รวมทุก Expiry ในอนาคต (All Aggregated)'
+    };
 
-    let html = `<option value="all">${aggLabel}</option>`;
-
-    activeExpiriesList.forEach(e => {
-      let tag = e.expiry_type || '';
-      if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • เป้าหมายหลัก';
-      else if (e.expiry_type === 'monthly') tag += ' • สิ้นเดือน';
-      else if (e.expiry_type === 'quarterly') tag += ' • ไตรมาส';
-      else if (e.expiry_type === 'weekly') tag += ' • ศุกร์';
-
+    groupKeys.forEach(k => {
+      const g = activeGroups[k];
       let metricText = '';
-      if (currentMetricView === 'volume') {
-        const vol = e.latest_total_volume || 0;
-        metricText = ` • Vol: ${Math.round(vol).toLocaleString()} BTC`;
-      } else {
-        const oi = e.latest_total_oi || 0;
-        metricText = ` • OI: ${Math.round(oi).toLocaleString()} BTC`;
+      if (g) {
+        if (currentMetricView === 'volume') {
+          metricText = ` • Vol: ${Math.round(g.latest_total_volume || 0).toLocaleString()} BTC`;
+        } else {
+          metricText = ` • OI: ${Math.round(g.latest_total_oi || 0).toLocaleString()} BTC`;
+        }
       }
-
-      html += `<option value="${e.expiry_date}">${e.expiry_date} (${tag})${metricText}</option>`;
+      const title = groupTitles[k] || k;
+      html += `<option value="${k}">${title}${metricText}</option>`;
     });
+    html += '</optgroup>';
 
-    html += `<option value="__archive__">🗄️ ดูประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Archive) →</option>`;
+    // OptGroup 2: สัญญารายตัว (Single Expiries)
+    if (activeExpiriesList && activeExpiriesList.length > 0) {
+      html += '<optgroup label="🎯 สัญญารายวัน/เดี่ยว (Single Expiries)">';
+      activeExpiriesList.forEach(e => {
+        let tag = e.expiry_type || '';
+        if (e.expiry_date === '{{ snap.expiry_date }}') tag += ' • เป้าหมายหลัก';
+        else if (e.expiry_type === 'monthly') tag += ' • สิ้นเดือน';
+        else if (e.expiry_type === 'quarterly') tag += ' • ไตรมาส';
+        else if (e.expiry_type === 'weekly') tag += ' • ศุกร์';
+
+        let metricText = '';
+        if (currentMetricView === 'volume') {
+          const vol = e.latest_total_volume || 0;
+          metricText = ` • Vol: ${Math.round(vol).toLocaleString()} BTC`;
+        } else {
+          const oi = e.latest_total_oi || 0;
+          metricText = ` • OI: ${Math.round(oi).toLocaleString()} BTC`;
+        }
+
+        html += `<option value="${e.expiry_date}">${e.expiry_date} (${tag})${metricText}</option>`;
+      });
+      html += '</optgroup>';
+    }
+
+    html += '<option value="__archive__">🗄️ ดูประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Archive) →</option>';
     picker.innerHTML = html;
+
     if (curVal) picker.value = curVal;
+    updateGroupingButtonState(curVal);
+  }
+
+  function updateGroupingButtonState(val) {
+    const btnMap = {
+      'group_today': 'grpToday',
+      'group_weekly': 'grpWeekly',
+      'group_monthly': 'grpMonthly',
+      'all': 'grpAll'
+    };
+    ['grpToday', 'grpWeekly', 'grpMonthly', 'grpAll'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.className = 'px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-transparent font-semibold transition';
+    });
+    if (btnMap[val]) {
+      const activeEl = document.getElementById(btnMap[val]);
+      if (activeEl) {
+        activeEl.className = 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold transition';
+      }
+    }
   }
 
   function changeMetricView(val) {
@@ -1081,24 +1126,19 @@
 
   // Load timeline data
   async function loadTimeline(expiryDate = null) {
-    let url = '/api/timeline?scope=active';
-    if (expiryDate && expiryDate !== 'all') {
-      url += `&expiry_date=${expiryDate}`;
-    }
+    const target = expiryDate || currentTargetKey || 'group_today';
+    currentTargetKey = target;
+    let url = `/api/timeline?scope=active&expiry_date=${encodeURIComponent(target)}`;
 
     try {
       const res = await fetch(url);
       const data = await res.json();
       timelineData = data.snapshots || [];
 
-      if (data.expiries && data.expiries.length > 0) {
-        activeExpiriesList = data.expiries;
-        updateExpiryPicker();
-        if (expiryDate) {
-          const picker = document.getElementById('expiryPicker');
-          if (picker) picker.value = expiryDate;
-        }
-      }
+      if (data.groups) activeGroups = data.groups;
+      if (data.expiries) activeExpiriesList = data.expiries;
+
+      updateExpiryPicker();
 
       const slider = document.getElementById('timelineSlider');
       if (timelineData.length > 0) {
@@ -1270,48 +1310,11 @@
 
   function selectGrouping(type) {
     pausePlayback();
-    ['grpToday', 'grpWeekly', 'grpMonthly', 'grpAll'].forEach(id => {
-      document.getElementById(id).className = 'px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 hover:text-white';
-    });
-
+    currentTargetKey = type;
     const picker = document.getElementById('expiryPicker');
-    const todayStr = '{{ snap.expiry_date }}';
-
-    if (type === 'today') {
-      document.getElementById('grpToday').className = 'px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
-      picker.value = todayStr;
-      loadTimeline(todayStr);
-    } else if (type === 'weekly') {
-      document.getElementById('grpWeekly').className = 'px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40';
-      let weeklyVal = '2026-10-30';
-      for (let i = 0; i < picker.options.length; i++) {
-        const val = picker.options[i].value;
-        const txt = picker.options[i].text.toLowerCase();
-        if (val >= todayStr && (txt.includes('weekly') || txt.includes('ศุกร์') || val === '2026-10-30')) {
-          weeklyVal = val;
-          break;
-        }
-      }
-      picker.value = weeklyVal;
-      loadTimeline(weeklyVal);
-    } else if (type === 'monthly') {
-      document.getElementById('grpMonthly').className = 'px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40';
-      let monthlyVal = '2026-10-30';
-      for (let i = 0; i < picker.options.length; i++) {
-        const val = picker.options[i].value;
-        const txt = picker.options[i].text.toLowerCase();
-        if (val >= todayStr && (txt.includes('monthly') || txt.includes('สิ้นเดือน'))) {
-          monthlyVal = val;
-          break;
-        }
-      }
-      picker.value = monthlyVal;
-      loadTimeline(monthlyVal);
-    } else if (type === 'all') {
-      document.getElementById('grpAll').className = 'px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
-      picker.value = 'all';
-      loadTimeline('all');
-    }
+    if (picker) picker.value = type;
+    updateGroupingButtonState(type);
+    loadTimeline(type);
   }
 
   function onExpiryChange(val) {
@@ -1320,12 +1323,14 @@
       return;
     }
     pausePlayback();
+    currentTargetKey = val;
+    updateGroupingButtonState(val);
     loadTimeline(val);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     initCharts();
-    loadTimeline('{{ snap.expiry_date }}');
+    loadTimeline('group_today');
   });
 </script>
 {% endif %}
