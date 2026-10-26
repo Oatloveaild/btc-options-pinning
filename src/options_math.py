@@ -83,6 +83,36 @@ def bs_delta(spot: float, strike: float, t_years: float, iv_decimal: float, is_c
         return 0.0
 
 
+def bs_price(spot: float, strike: float, t_years: float, iv_decimal: float, is_call: bool, r: float = 0.0) -> float:
+    """
+    Calculate Black-Scholes option price in USD.
+    Call = S * N(d1) - K * exp(-r*T) * N(d2)
+    Put = K * exp(-r*T) * N(-d2) - S * N(-d1)
+    """
+    if spot <= 0.0 or strike <= 0.0:
+        return 0.0
+    if t_years <= 1e-7 or iv_decimal <= 1e-4:
+        if is_call:
+            return max(0.0, spot - strike)
+        else:
+            return max(0.0, strike - spot)
+
+    try:
+        sigma_sqrt_t = iv_decimal * math.sqrt(t_years)
+        d1 = (math.log(spot / strike) + (r + 0.5 * iv_decimal * iv_decimal) * t_years) / sigma_sqrt_t
+        d2 = d1 - sigma_sqrt_t
+        discount = math.exp(-r * t_years)
+
+        if is_call:
+            price = spot * norm_cdf(d1) - strike * discount * norm_cdf(d2)
+        else:
+            price = strike * discount * norm_cdf(-d2) - spot * norm_cdf(-d1)
+
+        return max(0.0, price)
+    except (ValueError, OverflowError, ZeroDivisionError):
+        return max(0.0, spot - strike) if is_call else max(0.0, strike - spot)
+
+
 def calculate_max_pain(strikes_oi: List[Dict[str, float]]) -> float:
     """
     Calculate Max Pain strike.
