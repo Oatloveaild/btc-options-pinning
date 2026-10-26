@@ -73,25 +73,49 @@
         <!-- Call #1 -->
         <tr class="hover:bg-slate-800/40">
           <td class="px-4 py-2.5 font-bold text-emerald-400 flex items-center gap-1.5">
-            <span>🛡️ Call #1 (Call Wall)</span>
+            <span>🛡️ Call #1 (Call Wall #1)</span>
           </td>
-          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call1.pct_05 }}%</td>
-          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call1.pct_1 }}%</td>
-          <td class="px-4 py-2.5">{{ overall.call1.avg_dist }}%</td>
-          <td class="px-4 py-2.5 text-slate-400">{{ overall.n }}</td>
-          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Call สูงสุด (แนวต้าน)</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call1.pct_05 if overall.call1 else 0 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call1.pct_1 if overall.call1 else 0 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.call1.avg_dist if overall.call1 else "-" }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.call1.n if overall.call1 else overall.n }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Call สูงสุดอันดับ 1 (แนวต้านหลัก)</td>
+        </tr>
+
+        <!-- Call #2 -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-teal-400 flex items-center gap-1.5">
+            <span>🛡️ Call #2 (Call Wall #2)</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call2.pct_05 if overall.call2 else 0 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.call2.pct_1 if overall.call2 else 0 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.call2.avg_dist if overall.call2 else "-" }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.call2.n if overall.call2 else 0 }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Call อันดับ 2 (แนวต้านสำรองถัดไป)</td>
         </tr>
 
         <!-- Put #1 -->
         <tr class="hover:bg-slate-800/40">
           <td class="px-4 py-2.5 font-bold text-rose-400 flex items-center gap-1.5">
-            <span>🛡️ Put #1 (Put Wall)</span>
+            <span>🛡️ Put #1 (Put Wall #1)</span>
           </td>
-          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put1.pct_05 }}%</td>
-          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put1.pct_1 }}%</td>
-          <td class="px-4 py-2.5">{{ overall.put1.avg_dist }}%</td>
-          <td class="px-4 py-2.5 text-slate-400">{{ overall.n }}</td>
-          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Put สูงสุด (แนวรับ)</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put1.pct_05 if overall.put1 else 0 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put1.pct_1 if overall.put1 else 0 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.put1.avg_dist if overall.put1 else "-" }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.put1.n if overall.put1 else overall.n }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Put สูงสุดอันดับ 1 (แนวรับหลัก)</td>
+        </tr>
+
+        <!-- Put #2 -->
+        <tr class="hover:bg-slate-800/40">
+          <td class="px-4 py-2.5 font-bold text-orange-400 flex items-center gap-1.5">
+            <span>🛡️ Put #2 (Put Wall #2)</span>
+          </td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put2.pct_05 if overall.put2 else 0 }}%</td>
+          <td class="px-4 py-2.5 font-bold text-emerald-400">{{ overall.put2.pct_1 if overall.put2 else 0 }}%</td>
+          <td class="px-4 py-2.5">{{ overall.put2.avg_dist if overall.put2 else "-" }}%</td>
+          <td class="px-4 py-2.5 text-slate-400">{{ overall.put2.n if overall.put2 else 0 }}</td>
+          <td class="px-4 py-2.5 text-xs text-slate-400">กำแพง Put อันดับ 2 (แนวรับสำรองถัดไป)</td>
         </tr>
 
         <!-- Gamma Flip -->
@@ -117,42 +141,62 @@
     <div>
       <div class="flex items-center justify-between mb-2">
         <div class="text-xs font-bold uppercase text-slate-400 tracking-wider">
-          2. สถิติการ Settle ในกรอบและความกว้างเฉลี่ยกรอบ (Range Width & Containment)
+          2. สถิติการ Settle ในกรอบและความกว้างเฉลี่ยกรอบ (C1/P1 & C2/P2)
         </div>
         <span class="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-semibold border border-blue-500/30">
           Daily vs Weekly 7D
         </span>
       </div>
-      <!-- 4-Stat Metric Grid for Range Rates & Average Widths -->
+      <!-- 4-Stat Metric Grid for Primary (P1-C1) & Secondary (P2-C2) Ranges -->
       <div class="grid grid-cols-2 gap-2.5 mt-3">
-        <!-- Card 1: Daily Settle Rate -->
-        <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50 text-center">
-          <div class="text-[10px] font-bold text-teal-400 uppercase tracking-wider">📌 Settle ในกรอบรายวัน</div>
-          <div class="text-2xl font-bold text-emerald-400 mt-1">{{ overall.range.in_range_pct }}%</div>
-          <div class="text-[10px] text-slate-400 mt-1">Settle วันต่อวัน (n = {{ overall.range.n_range }})</div>
+        <!-- Daily Primary P1-C1 -->
+        <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
+          <div class="flex items-center justify-between text-[10px] font-bold text-teal-400 uppercase">
+            <span>📌 กรอบหลักรายวัน (P1–C1)</span>
+            <span class="text-emerald-400 font-extrabold text-sm">{{ overall.range.in_range_pct }}%</span>
+          </div>
+          <div class="mt-1 flex items-baseline justify-between text-[10px]">
+            <span class="text-slate-400">ความกว้างเฉลี่ย:</span>
+            <span class="text-xs font-bold text-cyan-300">{{ overall.range.avg_width }}%</span>
+          </div>
         </div>
-        <!-- Card 2: Daily Avg Width -->
-        <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50 text-center">
-          <div class="text-[10px] font-bold text-teal-300 uppercase tracking-wider">📏 ความกว้างเฉลี่ยกรอบรายวัน</div>
-          <div class="text-2xl font-bold text-cyan-300 mt-1">{{ overall.range.avg_width }}%</div>
-          <div class="text-[10px] text-slate-400 mt-1">ระยะเฉลี่ย Put #1 ถึง Call #1</div>
+        <!-- Daily Secondary P2-C2 -->
+        <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
+          <div class="flex items-center justify-between text-[10px] font-bold text-orange-400 uppercase">
+            <span>🛡️ กรอบรองรายวัน (P2–C2)</span>
+            <span class="text-emerald-400 font-extrabold text-sm">{{ overall.range_p2_c2.in_range_pct if overall.range_p2_c2 else "-" }}%</span>
+          </div>
+          <div class="mt-1 flex items-baseline justify-between text-[10px]">
+            <span class="text-slate-400">ความกว้างเฉลี่ย:</span>
+            <span class="text-xs font-bold text-amber-300">{{ overall.range_p2_c2.avg_width if overall.range_p2_c2 else "-" }}%</span>
+          </div>
         </div>
-        <!-- Card 3: Weekly 7D Settle Rate -->
-        <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50 text-center">
-          <div class="text-[10px] font-bold text-blue-400 uppercase tracking-wider">🗓️ Settle ในกรอบสัปดาห์ 7D</div>
-          <div class="text-2xl font-bold text-emerald-400 mt-1">{{ weekly_horizon.contained_7d_rate }}%</div>
-          <div class="text-[10px] text-slate-400 mt-1">วัดจาก 7 วันก่อนหน้า (n = {{ weekly_horizon.n_settled }})</div>
+        <!-- Weekly 7D Primary P1-C1 -->
+        <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
+          <div class="flex items-center justify-between text-[10px] font-bold text-blue-400 uppercase">
+            <span>🗓️ กรอบหลัก 7D (P1–C1)</span>
+            <span class="text-emerald-400 font-extrabold text-sm">{{ weekly_horizon.contained_7d_rate }}%</span>
+          </div>
+          <div class="mt-1 flex items-baseline justify-between text-[10px]">
+            <span class="text-slate-400">ความกว้างเฉลี่ย:</span>
+            <span class="text-xs font-bold text-purple-300">{{ weekly_horizon.avg_width_7d }}%</span>
+          </div>
         </div>
-        <!-- Card 4: Weekly 7D Avg Width -->
-        <div class="bg-slate-800/60 p-3 rounded-lg border border-darkborder/50 text-center">
-          <div class="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">📐 ความกว้างเฉลี่ยกรอบ 7D</div>
-          <div class="text-2xl font-bold text-purple-300 mt-1">{{ weekly_horizon.avg_width_7d }}%</div>
-          <div class="text-[10px] text-slate-400 mt-1">กรอบ P1–C1 (กรอบ P2–C2: {{ weekly_horizon.avg_width_p2_c2_7d }}%)</div>
+        <!-- Weekly 7D Secondary P2-C2 -->
+        <div class="bg-slate-800/60 p-2.5 rounded-lg border border-darkborder/50">
+          <div class="flex items-center justify-between text-[10px] font-bold text-indigo-400 uppercase">
+            <span>🛡️ กรอบรอง 7D (P2–C2)</span>
+            <span class="text-emerald-400 font-extrabold text-sm">{{ weekly_horizon.contained_p2_c2_7d_rate }}%</span>
+          </div>
+          <div class="mt-1 flex items-baseline justify-between text-[10px]">
+            <span class="text-slate-400">ความกว้างเฉลี่ย:</span>
+            <span class="text-xs font-bold text-indigo-300">{{ weekly_horizon.avg_width_p2_c2_7d }}%</span>
+          </div>
         </div>
       </div>
     </div>
     <p class="text-xs text-slate-400 mt-3 leading-relaxed">
-      💡 <strong>Insight:</strong> ทั้งกรอบรายวัน (กว้างเฉลี่ย ~{{ overall.range.avg_width }}%) และกรอบสัปดาห์ 7 วันล่วงหน้า (กว้างเฉลี่ย ~{{ weekly_horizon.avg_width_7d }}%) กำแพง P1 และ C1 ของดีลเลอร์ทำหน้าที่เป็น Boundary กักราคา Settle ได้ครอบคลุมสูงมาก
+      💡 <strong>Insight:</strong> ทั้งกรอบรายวัน (กว้างเฉลี่ย ~{{ overall.range.avg_width }}%) และกรอบสัปดาห์ 7 วันล่วงหน้า (กว้างเฉลี่ย ~{{ weekly_horizon.avg_width_7d }}%) กำแพง C1/C2 และ P1/P2 ของดีลเลอร์ทำหน้าที่เป็นแนวรับ-ต้านสองชั้นที่กักราคา Settle ได้แม่นยำสูงมาก
     </p>
   </div>
 
@@ -207,6 +251,34 @@
         กว้างเฉลี่ย P1–C1: {{ weekly_horizon.avg_width_7d }}% | P2–C2: {{ weekly_horizon.avg_width_p2_c2_7d }}%
       </span>
       <span class="text-xs text-slate-400 hidden sm:inline">วัดผล 7 วันก่อนหน้า ➔ การ Settle จริงวันศุกร์</span>
+    </div>
+  </div>
+
+  <!-- Weekly Horizon Key Metrics Banner (P1/P2 & C1/C2 Statistics) -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3.5 text-center">
+    <div class="bg-slate-800/50 p-2 rounded-lg border border-darkborder/40">
+      <div class="text-[10px] text-slate-400">🛡️ Settle ในกรอบหลัก 7D (P1–C1)</div>
+      <div class="text-lg font-bold text-emerald-400 mt-0.5">{{ weekly_horizon.contained_7d_rate }}%</div>
+      <div class="text-[9px] text-slate-400 mt-0.5">กว้างเฉลี่ย {{ weekly_horizon.avg_width_7d }}%</div>
+    </div>
+    <div class="bg-slate-800/50 p-2 rounded-lg border border-darkborder/40">
+      <div class="text-[10px] text-slate-400">🛡️ Settle ในกรอบรอง 7D (P2–C2)</div>
+      <div class="text-lg font-bold text-cyan-300 mt-0.5">{{ weekly_horizon.contained_p2_c2_7d_rate }}%</div>
+      <div class="text-[9px] text-slate-400 mt-0.5">กว้างเฉลี่ย {{ weekly_horizon.avg_width_p2_c2_7d }}%</div>
+    </div>
+    <div class="bg-slate-800/50 p-2 rounded-lg border border-darkborder/40">
+      <div class="text-[10px] text-slate-400">📈 Call Shift เฉลี่ย 7 วัน</div>
+      <div class="text-xs font-bold text-emerald-300 mt-1">
+        C1: {{ "{:+.1f}%".format(weekly_horizon.avg_c1_shift_pct) }} | C2: {{ "{:+.1f}%".format(weekly_horizon.avg_c2_shift_pct) }}
+      </div>
+      <div class="text-[9px] text-slate-400 mt-0.5">การขยับของแนวต้าน 7D</div>
+    </div>
+    <div class="bg-slate-800/50 p-2 rounded-lg border border-darkborder/40">
+      <div class="text-[10px] text-slate-400">📉 Put Shift เฉลี่ย 7 วัน</div>
+      <div class="text-xs font-bold text-rose-300 mt-1">
+        P1: {{ "{:+.1f}%".format(weekly_horizon.avg_p1_shift_pct) }} | P2: {{ "{:+.1f}%".format(weekly_horizon.avg_p2_shift_pct) }}
+      </div>
+      <div class="text-[9px] text-slate-400 mt-0.5">การขยับของแนวรับ 7D</div>
     </div>
   </div>
 
@@ -384,52 +456,60 @@
 <!-- Breakdown by Expiry Type -->
 <div class="mt-4 bg-darkcard border border-darkborder rounded-xl p-4 shadow">
   <div class="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
-    4. จำแนก Hit-rate ตามประเภท Expiry (Daily vs Weekly vs Monthly)
+    4. จำแนก Hit-rate ตามประเภท Expiry (Daily vs Weekly vs Monthly) — ครอบคลุม C1/P1 & C2/P2
   </div>
   <div class="overflow-x-auto">
     <table class="w-full text-xs text-left text-slate-300">
-      <thead class="text-slate-400 bg-slate-800/80 uppercase">
+      <thead class="text-slate-400 bg-slate-800/80 uppercase text-[10px]">
         <tr>
-          <th class="px-3 py-2">ประเภท Expiry</th>
-          <th class="px-3 py-2">Max Pain ±0.5%</th>
-          <th class="px-3 py-2">Max Pain ±1.0%</th>
-          <th class="px-3 py-2">Top OI ±0.5%</th>
-          <th class="px-3 py-2">Top OI ±1.0%</th>
-          <th class="px-3 py-2">อยู่ในกรอบ P1–C1</th>
-          <th class="px-3 py-2">ระยะห่างเฉลี่ย MP</th>
-          <th class="px-3 py-2">จำนวน n</th>
+          <th class="px-2.5 py-2">ประเภท Expiry</th>
+          <th class="px-2.5 py-2">Max Pain ±0.5%</th>
+          <th class="px-2.5 py-2">Max Pain ±1.0%</th>
+          <th class="px-2.5 py-2">Top OI ±1.0%</th>
+          <th class="px-2.5 py-2 text-teal-300">Call #2 ±1.0%</th>
+          <th class="px-2.5 py-2 text-orange-300">Put #2 ±1.0%</th>
+          <th class="px-2.5 py-2">กรอบ P1–C1</th>
+          <th class="px-2.5 py-2">กรอบ P2–C2</th>
+          <th class="px-2.5 py-2">ระยะห่าง MP</th>
+          <th class="px-2.5 py-2">จำนวน n</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-darkborder/50">
         <tr class="hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-bold text-white">Daily Expiry</td>
-          <td class="px-3 py-2">{{ daily.max_pain.pct_05 if daily else "-" }}%</td>
-          <td class="px-3 py-2">{{ daily.max_pain.pct_1 if daily else "-" }}%</td>
-          <td class="px-3 py-2">{{ daily.top_oi.pct_05 if daily else "-" }}%</td>
-          <td class="px-3 py-2">{{ daily.top_oi.pct_1 if daily else "-" }}%</td>
-          <td class="px-3 py-2">{{ daily.range.in_range_pct if daily else "-" }}%</td>
-          <td class="px-3 py-2">{{ daily.max_pain.avg_dist if daily else "-" }}%</td>
-          <td class="px-3 py-2 text-slate-400">{{ daily.n if daily else 0 }}</td>
+          <td class="px-2.5 py-2 font-bold text-white">Daily Expiry</td>
+          <td class="px-2.5 py-2">{{ daily.max_pain.pct_05 if daily else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ daily.max_pain.pct_1 if daily else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ daily.top_oi.pct_1 if daily else "-" }}%</td>
+          <td class="px-2.5 py-2 text-teal-300 font-semibold">{{ daily.call2.pct_1 if (daily and daily.call2) else "-" }}%</td>
+          <td class="px-2.5 py-2 text-orange-300 font-semibold">{{ daily.put2.pct_1 if (daily and daily.put2) else "-" }}%</td>
+          <td class="px-2.5 py-2 font-bold text-emerald-400">{{ daily.range.in_range_pct if daily else "-" }}%</td>
+          <td class="px-2.5 py-2 font-bold text-cyan-300">{{ daily.range_p2_c2.in_range_pct if (daily and daily.range_p2_c2) else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ daily.max_pain.avg_dist if daily else "-" }}%</td>
+          <td class="px-2.5 py-2 text-slate-400">{{ daily.n if daily else 0 }}</td>
         </tr>
         <tr class="hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-bold text-blue-400">Weekly Expiry (ศุกร์)</td>
-          <td class="px-3 py-2">{{ weekly.max_pain.pct_05 if weekly else "-" }}%</td>
-          <td class="px-3 py-2">{{ weekly.max_pain.pct_1 if weekly else "-" }}%</td>
-          <td class="px-3 py-2">{{ weekly.top_oi.pct_05 if weekly else "-" }}%</td>
-          <td class="px-3 py-2">{{ weekly.top_oi.pct_1 if weekly else "-" }}%</td>
-          <td class="px-3 py-2">{{ weekly.range.in_range_pct if weekly else "-" }}%</td>
-          <td class="px-3 py-2">{{ weekly.max_pain.avg_dist if weekly else "-" }}%</td>
-          <td class="px-3 py-2 text-slate-400">{{ weekly.n if weekly else 0 }}</td>
+          <td class="px-2.5 py-2 font-bold text-blue-400">Weekly Expiry (ศุกร์)</td>
+          <td class="px-2.5 py-2">{{ weekly.max_pain.pct_05 if weekly else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ weekly.max_pain.pct_1 if weekly else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ weekly.top_oi.pct_1 if weekly else "-" }}%</td>
+          <td class="px-2.5 py-2 text-teal-300 font-semibold">{{ weekly.call2.pct_1 if (weekly and weekly.call2) else "-" }}%</td>
+          <td class="px-2.5 py-2 text-orange-300 font-semibold">{{ weekly.put2.pct_1 if (weekly and weekly.put2) else "-" }}%</td>
+          <td class="px-2.5 py-2 font-bold text-emerald-400">{{ weekly.range.in_range_pct if weekly else "-" }}%</td>
+          <td class="px-2.5 py-2 font-bold text-cyan-300">{{ weekly.range_p2_c2.in_range_pct if (weekly and weekly.range_p2_c2) else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ weekly.max_pain.avg_dist if weekly else "-" }}%</td>
+          <td class="px-2.5 py-2 text-slate-400">{{ weekly.n if weekly else 0 }}</td>
         </tr>
         <tr class="hover:bg-slate-800/40">
-          <td class="px-3 py-2 font-bold text-purple-400">Monthly / Quarterly</td>
-          <td class="px-3 py-2">{{ monthly.max_pain.pct_05 if monthly else "-" }}%</td>
-          <td class="px-3 py-2">{{ monthly.max_pain.pct_1 if monthly else "-" }}%</td>
-          <td class="px-3 py-2">{{ monthly.top_oi.pct_05 if monthly else "-" }}%</td>
-          <td class="px-3 py-2">{{ monthly.top_oi.pct_1 if monthly else "-" }}%</td>
-          <td class="px-3 py-2">{{ monthly.range.in_range_pct if monthly else "-" }}%</td>
-          <td class="px-3 py-2">{{ monthly.max_pain.avg_dist if monthly else "-" }}%</td>
-          <td class="px-3 py-2 text-slate-400">{{ monthly.n if monthly else 0 }}</td>
+          <td class="px-2.5 py-2 font-bold text-purple-400">Monthly / Quarterly</td>
+          <td class="px-2.5 py-2">{{ monthly.max_pain.pct_05 if monthly else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ monthly.max_pain.pct_1 if monthly else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ monthly.top_oi.pct_1 if monthly else "-" }}%</td>
+          <td class="px-2.5 py-2 text-teal-300 font-semibold">{{ monthly.call2.pct_1 if (monthly and monthly.call2) else "-" }}%</td>
+          <td class="px-2.5 py-2 text-orange-300 font-semibold">{{ monthly.put2.pct_1 if (monthly and monthly.put2) else "-" }}%</td>
+          <td class="px-2.5 py-2 font-bold text-emerald-400">{{ monthly.range.in_range_pct if monthly else "-" }}%</td>
+          <td class="px-2.5 py-2 font-bold text-cyan-300">{{ monthly.range_p2_c2.in_range_pct if (monthly and monthly.range_p2_c2) else "-" }}%</td>
+          <td class="px-2.5 py-2">{{ monthly.max_pain.avg_dist if monthly else "-" }}%</td>
+          <td class="px-2.5 py-2 text-slate-400">{{ monthly.n if monthly else 0 }}</td>
         </tr>
       </tbody>
     </table>
