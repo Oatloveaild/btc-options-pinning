@@ -33,6 +33,12 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.on_event("startup")
 def on_startup():
+    from src.gdrive_backup import restore_database_if_missing
+    try:
+        restore_res = restore_database_if_missing()
+        print(f"[STARTUP] Google Drive restore check: {restore_res}")
+    except Exception as e:
+        print(f"[STARTUP WARNING] Google Drive restore check failed: {e}")
     init_db()
     init_scheduler()
 
@@ -44,6 +50,26 @@ def on_startup():
 def api_ping():
     """Ultra-lightweight keep-alive endpoint for cron-job.org and uptime monitors (<20 bytes)."""
     return {"status": "ok"}
+
+
+@app.post("/api/backup/gdrive")
+def api_backup_gdrive():
+    """Manually trigger immediate backup of btc_pinning.db to user's Google Drive."""
+    from src.gdrive_backup import backup_database
+    res = backup_database()
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("error", "Backup failed"))
+    return res
+
+
+@app.post("/api/restore/gdrive")
+def api_restore_gdrive():
+    """Manually trigger restoration of btc_pinning.db from Google Drive."""
+    from src.gdrive_backup import restore_database_if_missing
+    res = restore_database_if_missing(force=True)
+    if not res.get("restored"):
+        raise HTTPException(status_code=500, detail=res.get("error", "Restore failed"))
+    return res
 
 
 @app.post("/api/scheduler/trigger")
