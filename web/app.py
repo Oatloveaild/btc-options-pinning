@@ -815,44 +815,50 @@ def page_results(
 @app.get("/stats", response_class=HTMLResponse)
 def page_stats(request: Request):
     """Cumulative hit-rate statistics breakdown."""
-    with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM expiry_results WHERE settlement_price IS NOT NULL")
-        all_results = [dict(r) for r in cursor.fetchall()]
+    from src.cache import memory_cache
+    ctx = memory_cache.get("stats:page_context")
+    if not ctx:
+        with get_db() as conn:
+            cursor = conn.execute("SELECT * FROM expiry_results WHERE settlement_price IS NOT NULL")
+            all_results = [dict(r) for r in cursor.fetchall()]
 
-    overall_stats = compute_stats_for_subset(all_results)
-    daily_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "daily"])
-    weekly_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "weekly"])
-    monthly_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") in ("monthly", "quarterly")])
+            overall_stats = compute_stats_for_subset(all_results)
+            daily_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "daily"])
+            weekly_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") == "weekly"])
+            monthly_stats = compute_stats_for_subset([r for r in all_results if r.get("expiry_type") in ("monthly", "quarterly")])
 
-    with_events_stats = compute_stats_for_subset([r for r in all_results if r.get("has_high_impact_event") == 1])
-    no_events_stats = compute_stats_for_subset([r for r in all_results if not r.get("has_high_impact_event")])
+            with_events_stats = compute_stats_for_subset([r for r in all_results if r.get("has_high_impact_event") == 1])
+            no_events_stats = compute_stats_for_subset([r for r in all_results if not r.get("has_high_impact_event")])
 
-    weekly_horizon = compute_weekly_horizon_stats(conn)
+            weekly_horizon = compute_weekly_horizon_stats(conn)
 
-    # Distribution data for chart
-    mp_distances = [
-        round(r["dist_max_pain_pct"], 2) for r in all_results if r.get("dist_max_pain_pct") is not None
-    ]
-    top_distances = [
-        round(r["dist_top_oi_pct"], 2) for r in all_results if r.get("dist_top_oi_pct") is not None
-    ]
+            # Distribution data for chart
+            mp_distances = [
+                round(r["dist_max_pain_pct"], 2) for r in all_results if r.get("dist_max_pain_pct") is not None
+            ]
+            top_distances = [
+                round(r["dist_top_oi_pct"], 2) for r in all_results if r.get("dist_top_oi_pct") is not None
+            ]
+
+            ctx = {
+                "page": "stats",
+                "overall": overall_stats,
+                "daily": daily_stats,
+                "weekly": weekly_stats,
+                "monthly": monthly_stats,
+                "with_events": with_events_stats,
+                "no_events": no_events_stats,
+                "weekly_horizon": weekly_horizon,
+                "mp_distances": mp_distances,
+                "top_distances": top_distances,
+                "total_settled": len(all_results),
+            }
+            memory_cache.set("stats:page_context", ctx, ttl=60.0)
 
     return templates.TemplateResponse(
         request=request,
         name="stats.html",
-        context={
-            "page": "stats",
-            "overall": overall_stats,
-            "daily": daily_stats,
-            "weekly": weekly_stats,
-            "monthly": monthly_stats,
-            "with_events": with_events_stats,
-            "no_events": no_events_stats,
-            "weekly_horizon": weekly_horizon,
-            "mp_distances": mp_distances,
-            "top_distances": top_distances,
-            "total_settled": len(all_results),
-        },
+        context=ctx,
     )
 
 
