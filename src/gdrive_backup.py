@@ -169,21 +169,26 @@ def backup_database(db_file_path: Optional[Path] = None) -> Dict[str, Any]:
         r_find = httpx.get(
             "https://www.googleapis.com/drive/v3/files",
             headers=headers,
-            params={"q": q, "fields": "files(id, name)"},
+            params={"q": q, "fields": "files(id, name, size)"},
             timeout=15.0,
         )
         existing = r_find.json().get("files", []) if r_find.status_code == 200 else []
 
         if existing:
-            file_id = existing[0]["id"]
-            upload_url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
-            r_up = httpx.patch(
-                upload_url,
-                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/x-sqlite3"},
-                content=db_bytes,
-                timeout=30.0,
-            )
-            action = "updated"
+            remote_size = int(existing[0].get("size", 0))
+            if remote_size > 2_000_000 and len(db_bytes) < (remote_size * 0.5):
+                logger.warning(f"Aborting master update: local size ({len(db_bytes)}) is much smaller than remote master ({remote_size}). Only saving archive.")
+                action = "skipped_master_update"
+            else:
+                file_id = existing[0]["id"]
+                upload_url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
+                r_up = httpx.patch(
+                    upload_url,
+                    headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/x-sqlite3"},
+                    content=db_bytes,
+                    timeout=60.0,
+                )
+                action = "updated" if r_up.status_code == 200 else "failed"
         else:
             meta = {
                 "name": "btc_pinning.db",
@@ -241,35 +246,12 @@ def backup_database(db_file_path: Optional[Path] = None) -> Dict[str, Any]:
 
 def restore_database_if_missing(db_file_path: Optional[Path] = None, force: bool = False) -> Dict[str, Any]:
     """
-    On cold startup (especially on Render cloud where disk might be wiped),
-    downloads the latest btc_pinning.db from Google Drive if local database is missing
-    or has fewer than 2 snapshots.
-    If force=True, restores unconditionally from Google Drive.
+    On cold startup (especially on Render cloud where disk might be wiped or contain stale git clone),
+    downloads the richest database from Google Drive if local database is missing,
+    has fewer than 10 snapshots, is significantly smaller than remote, or if running in Render cloud.
     """
     target_path = Path(db_file_path) if db_file_path else DB_PATH
 
-    # Check if restore is needed
-    needs_restore = force
-    if not needs_restore:
-        if not target_path.exists() or target_path.stat().st_size == 0:
-            needs_restore = True
-        else:
-            # Check table row count
-            try:
-                import sqlite3
-                with sqlite3.connect(target_path) as conn:
-                    cur = conn.cursor()
-                    cur.execute("SELECT COUNT(*) FROM snapshots")
-                    count = cur.fetchone()[0]
-                    if count < 2:
-                        needs_restore = True
-            except Exception:
-                needs_restore = True
-
-    if not needs_restore:
-        return {"restored": False, "reason": "Local database is healthy and populated."}
-
-    logger.info(f"Local database needs restoration. Attempting restore from Google Drive...")
     access_token = get_access_token()
     if not access_token:
         return {"restored": False, "error": "No Google Drive access token available"}
@@ -280,32 +262,60 @@ def restore_database_if_missing(db_file_path: Optional[Path] = None, force: bool
 
     headers = {"Authorization": f"Bearer {access_token}"}
     try:
-        # Find 'btc_pinning.db' in folder
-        q = f"name = 'btc_pinning.db' and '{folder_id}' in parents and trashed = false"
+        # Find all db files in the backup folder
+        q = f"'{folder_id}' in parents and trashed = false and name contains '.db'"
         r_find = httpx.get(
             "https://www.googleapis.com/drive/v3/files",
             headers=headers,
-            params={"q": q, "fields": "files(id, name, size)"},
+            params={"q": q, "fields": "files(id, name, size, modifiedTime)", "orderBy": "modifiedTime desc"},
             timeout=15.0,
         )
         files = r_find.json().get("files", []) if r_find.status_code == 200 else []
         if not files:
-            return {"restored": False, "error": "No btc_pinning.db found in backup folder to restore"}
+            return {"restored": False, "error": "No database backups found in Google Drive folder"}
 
-        file_id = files[0]["id"]
-        # Download media
+        # Find the richest database file (largest file size)
+        best_file = max(files, key=lambda x: int(x.get("size", 0)))
+        remote_size = int(best_file.get("size", 0))
+        local_size = target_path.stat().st_size if target_path.exists() else 0
+
+        # Check local snapshot count
+        local_snapshots = 0
+        if target_path.exists() and local_size > 0:
+            try:
+                import sqlite3
+                with sqlite3.connect(target_path) as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM snapshots")
+                    local_snapshots = cur.fetchone()[0]
+            except Exception:
+                local_snapshots = 0
+
+        # Needs restore if forced, missing, local has fewer than 10 snapshots, or local is smaller than 80% of remote
+        needs_restore = force or (not target_path.exists()) or (local_snapshots < 10) or (local_size < remote_size * 0.8) or bool(os.getenv("RENDER"))
+
+        if not needs_restore:
+            return {"restored": False, "reason": f"Local database is already healthy ({local_snapshots} snapshots, {round(local_size/1024, 1)} KB)."}
+
+        file_id = best_file["id"]
         download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
         r_down = httpx.get(download_url, headers=headers, timeout=60.0)
         if r_down.status_code == 200:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_bytes(r_down.content)
             size_kb = round(len(r_down.content) / 1024, 2)
-            msg = f"Restored {size_kb} KB database from Google Drive successfully!"
+            msg = f"Restored {size_kb} KB database ({best_file['name']}) from Google Drive successfully!"
             logger.info(msg)
-            return {"restored": True, "size_kb": size_kb, "message": msg}
+            try:
+                from src.cache import memory_cache
+                memory_cache.clear()
+            except Exception:
+                pass
+            return {"restored": True, "size_kb": size_kb, "message": msg, "source_file": best_file["name"]}
         else:
             return {"restored": False, "error": f"Failed downloading database: {r_down.status_code}"}
 
     except Exception as e:
         logger.error(f"Error restoring database from Google Drive: {e}")
+        return {"restored": False, "error": str(e)}
         return {"restored": False, "error": str(e)}
