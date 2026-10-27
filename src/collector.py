@@ -543,6 +543,13 @@ def run_snapshot(label: str = "manual") -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Google Drive auto-backup error: {e}")
 
+        # Step 8: Invalidate in-memory cache for instant fresh data
+        try:
+            from src.cache import memory_cache
+            memory_cache.clear()
+        except Exception:
+            pass
+
         return {
             "status": "success",
             "snapshot_time_bkk": ref_time_str,
