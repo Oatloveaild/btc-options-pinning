@@ -304,6 +304,13 @@ def run_settlement(target_date_str: Optional[str] = None) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"Google Drive auto-backup error after settlement: {e}")
 
+    # Invalidate in-memory cache for instant fresh settlement stats
+    try:
+        from src.cache import memory_cache
+        memory_cache.clear()
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "expiry_date": target_date_str,
