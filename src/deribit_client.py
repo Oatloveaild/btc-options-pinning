@@ -41,15 +41,41 @@ class DeribitClient:
         """Fetch current index price and estimated delivery price."""
         return self._request("/get_index_price", {"index_name": index_name})
 
-    def get_instruments(self, currency: str = "BTC", kind: str = "option", expired: bool = False) -> List[Dict[str, Any]]:
+    def get_instruments(self, currency: str = "BTC", kind: str = "option", expired: bool = False, use_cache: bool = True) -> List[Dict[str, Any]]:
         """Fetch active option instruments."""
+        if use_cache and not expired:
+            from src.cache import memory_cache
+            cache_key = f"deribit_instruments:{currency}:{kind}"
+            cached_data = memory_cache.get(cache_key)
+            if cached_data is not None:
+                return cached_data
+            data = self._request(
+                "/get_instruments",
+                {"currency": currency, "kind": kind, "expired": str(expired).lower()},
+            )
+            memory_cache.set(cache_key, data, ttl=120.0)
+            return data
+
         return self._request(
             "/get_instruments",
             {"currency": currency, "kind": kind, "expired": str(expired).lower()},
         )
 
-    def get_book_summary_by_currency(self, currency: str = "BTC", kind: str = "option") -> List[Dict[str, Any]]:
+    def get_book_summary_by_currency(self, currency: str = "BTC", kind: str = "option", use_cache: bool = True) -> List[Dict[str, Any]]:
         """Fetch book summary (OI, volume, mark_iv, etc.) for all option instruments."""
+        if use_cache:
+            from src.cache import memory_cache
+            cache_key = f"deribit_book_summary:{currency}:{kind}"
+            cached_data = memory_cache.get(cache_key)
+            if cached_data is not None:
+                return cached_data
+            data = self._request(
+                "/get_book_summary_by_currency",
+                {"currency": currency, "kind": kind},
+            )
+            memory_cache.set(cache_key, data, ttl=15.0)
+            return data
+
         return self._request(
             "/get_book_summary_by_currency",
             {"currency": currency, "kind": kind},
