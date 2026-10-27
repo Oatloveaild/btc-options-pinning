@@ -1,15 +1,16 @@
 import csv
 import io
+import threading
 from datetime import datetime
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from src.config import BASE_DIR, BKK_TZ
 from src.db import get_db, init_db
 from src.events import add_custom_event, delete_event, fetch_forexfactory_events, get_events
-from src.scheduler import init_scheduler, trigger_manual
+from src.scheduler import check_and_run_hourly_tasks, init_scheduler, trigger_manual
 from src.settlement_analytics import (
     analyze_news_sentiment,
     analyze_pinning_and_gex_flow,
@@ -47,15 +48,30 @@ def on_startup():
     except Exception as e:
         print(f"[STARTUP WARNING] Paper trade startup check failed: {e}")
     init_scheduler()
+    try:
+        threading.Thread(target=check_and_run_hourly_tasks, args=("startup_thread",), daemon=True).start()
+    except Exception as e:
+        print(f"[STARTUP WARNING] Initial hourly check thread failed: {e}")
 
 
 # ---------------- API Endpoints ----------------
 
 @app.get("/ping")
 @app.get("/health")
-def api_ping():
-    """Ultra-lightweight keep-alive endpoint for cron-job.org and uptime monitors (<20 bytes)."""
-    return {"status": "ok"}
+def api_ping(background_tasks: BackgroundTasks):
+    """
+    Ultra-lightweight keep-alive & heartbeat endpoint for cron-job.org and uptime monitors.
+    Returns HTTP 200 immediately (<1ms) while dispatching check_and_run_hourly_tasks in the background.
+    """
+    background_tasks.add_task(check_and_run_hourly_tasks, "cron_10min_ping")
+    return {"status": "ok", "cron": "10min_heartbeat"}
+
+
+@app.post("/api/scheduler/check_now")
+def api_scheduler_check_now():
+    """Manually trigger the hourly & settlement check."""
+    res = check_and_run_hourly_tasks("manual_api")
+    return res
 
 
 @app.post("/api/backup/gdrive")
