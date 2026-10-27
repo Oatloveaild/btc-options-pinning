@@ -655,8 +655,14 @@ def _create_active_trade(
     )
 
 
-def get_all_portfolios_data() -> Dict[str, Any]:
+def get_all_portfolios_data(use_cache: bool = True) -> Dict[str, Any]:
     """Retrieves full summary, equity curves, active positions, and trade history."""
+    if use_cache:
+        from src.cache import memory_cache
+        cached_val = memory_cache.get("paper_trade:all_data")
+        if cached_val is not None:
+            return cached_val
+
     init_paper_trade_tables()
     backfill_paper_trades_from_history()
     open_active_paper_trades()
@@ -796,7 +802,7 @@ def get_all_portfolios_data() -> Dict[str, Any]:
                     "pct": round(last_pct, 2),
                 })
 
-        return {
+        result = {
             "portfolios": ports,
             "active_trades": active_trades,
             "history": history,
@@ -810,6 +816,10 @@ def get_all_portfolios_data() -> Dict[str, Any]:
             },
             "current_spot": cur_spot,
         }
+        if use_cache:
+            from src.cache import memory_cache
+            memory_cache.set("paper_trade:all_data", result, ttl=25.0)
+        return result
 
 
 def settle_active_paper_trades(settle_date: str, settle_price: float):
@@ -920,6 +930,11 @@ def settle_active_paper_trades(settle_date: str, settle_price: float):
 
     # Open next cycle active trades
     open_active_paper_trades()
+    try:
+        from src.cache import memory_cache
+        memory_cache.delete("paper_trade:all_data")
+    except Exception:
+        pass
 
 
 def reset_paper_trades():
@@ -960,4 +975,9 @@ def reset_paper_trades():
         conn.commit()
     backfill_paper_trades_from_history()
     open_active_paper_trades()
+    try:
+        from src.cache import memory_cache
+        memory_cache.delete("paper_trade:all_data")
+    except Exception:
+        pass
     return {"status": "success", "message": "Paper trade portfolios reset successfully"}
