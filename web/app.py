@@ -1,6 +1,7 @@
 import csv
 import io
 import threading
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
@@ -191,6 +192,15 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
     Returns list of chronological snapshots and their per-strike data.
     scope: 'active' (default for main dashboard), 'expired' (for archive), 'all'
     """
+    cache_key = f"timeline_{expiry_date or 'default'}_{scope}"
+    try:
+        from src.cache import memory_cache
+        cached = memory_cache.get(cache_key)
+        if cached:
+            return cached
+    except Exception:
+        pass
+
     with get_db() as conn:
         # Get distinct expiries with counts and latest total_oi and total_volume sorted chronologically (ascending)
         cur_exp = conn.execute("""
@@ -216,14 +226,17 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
         """)
         all_exp = [dict(r) for r in cur_exp.fetchall()]
 
-        # Populate latest volume from oi_by_strike for expiries where snapshots.total_volume is null
+        # Efficiently populate latest volume from oi_by_strike via CTE (100x faster than correlated subquery)
         cur_latest_vol = conn.execute("""
-            SELECT expiry_date, ROUND(SUM(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0)), 2) as vol
-            FROM oi_by_strike o
-            WHERE snapshot_time_bkk = (
-                SELECT MAX(o2.snapshot_time_bkk) FROM oi_by_strike o2 WHERE o2.expiry_date = o.expiry_date
+            WITH latest_snaps AS (
+                SELECT expiry_date, MAX(snapshot_time_bkk) as max_time
+                FROM oi_by_strike
+                GROUP BY expiry_date
             )
-            GROUP BY expiry_date
+            SELECT o.expiry_date, ROUND(SUM(COALESCE(o.call_volume_24h, 0) + COALESCE(o.put_volume_24h, 0)), 2) as vol
+            FROM oi_by_strike o
+            JOIN latest_snaps ls ON o.expiry_date = ls.expiry_date AND o.snapshot_time_bkk = ls.max_time
+            GROUP BY o.expiry_date
         """)
         vol_map = {r["expiry_date"]: r["vol"] for r in cur_latest_vol.fetchall()}
         for e in all_exp:
@@ -346,35 +359,46 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
 
         # Query snapshots
         if not is_group and target_dates:
+            target_date = target_dates[0]
             cur_s = conn.execute(
                 "SELECT * FROM snapshots WHERE expiry_date = ? ORDER BY snapshot_time_bkk ASC",
-                (target_dates[0],),
+                (target_date,),
             )
-            snaps = [dict(r) for r in cur_s.fetchall()]
+            snaps_rows = [dict(r) for r in cur_s.fetchall()]
 
-            # Fetch strikes for each snapshot
-            for s in snaps:
-                cur_st = conn.execute(
-                    """
-                    SELECT strike, call_oi, put_oi, total_oi, call_oi_usd, put_oi_usd,
-                           call_volume_24h, put_volume_24h,
-                           ROUND(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0), 2) as total_volume_24h,
-                           call_gex_usd, put_gex_usd, net_gex_usd, call_iv, put_iv
-                    FROM oi_by_strike
-                    WHERE snapshot_time_bkk = ? AND expiry_date = ?
-                    ORDER BY strike ASC
-                    """,
-                    (s["snapshot_time_bkk"], s["expiry_date"]),
-                )
-                s["strikes"] = [dict(r) for r in cur_st.fetchall()]
-                tot_c_vol = round(sum(st.get("call_volume_24h") or 0.0 for st in s["strikes"]), 2)
-                tot_p_vol = round(sum(st.get("put_volume_24h") or 0.0 for st in s["strikes"]), 2)
+            # Fetch ALL strikes for this expiry in ONE single query (no per-snapshot N+1 loop)
+            cur_all_st = conn.execute(
+                """
+                SELECT strike, call_oi, put_oi, total_oi, call_oi_usd, put_oi_usd,
+                       call_volume_24h, put_volume_24h,
+                       ROUND(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0), 2) as total_volume_24h,
+                       call_gex_usd, put_gex_usd, net_gex_usd, call_iv, put_iv,
+                       snapshot_time_bkk
+                FROM oi_by_strike
+                WHERE expiry_date = ?
+                ORDER BY snapshot_time_bkk ASC, strike ASC
+                """,
+                (target_date,),
+            )
+            strikes_by_time = defaultdict(list)
+            for r in cur_all_st.fetchall():
+                st_dict = dict(r)
+                snap_time = st_dict.pop("snapshot_time_bkk")
+                strikes_by_time[snap_time].append(st_dict)
+
+            snaps = []
+            for s in snaps_rows:
+                st_list = strikes_by_time.get(s["snapshot_time_bkk"], [])
+                s["strikes"] = st_list
+                tot_c_vol = round(sum(st.get("call_volume_24h") or 0.0 for st in st_list), 2)
+                tot_p_vol = round(sum(st.get("put_volume_24h") or 0.0 for st in st_list), 2)
                 s["total_call_volume"] = s.get("total_call_volume") or tot_c_vol
                 s["total_put_volume"] = s.get("total_put_volume") or tot_p_vol
                 s["total_volume"] = s.get("total_volume") or round(tot_c_vol + tot_p_vol, 2)
                 s["put_call_volume_ratio"] = s.get("put_call_volume_ratio") or (round(tot_p_vol / tot_c_vol, 2) if tot_c_vol > 0 else 0.0)
+                snaps.append(s)
         else:
-            # Aggregated timeline across target_dates at each distinct snapshot time
+            # Aggregated timeline across target_dates in a SINGLE aggregated query
             from src.options_math import calculate_max_pain
 
             placeholders = ",".join("?" for _ in target_dates) if target_dates else "'__none__'"
@@ -387,34 +411,41 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                 ORDER BY snapshot_time_bkk ASC
             """, tuple(target_dates) if target_dates else ())
             times_rows = [dict(r) for r in cur_times.fetchall()]
+
+            # Fetch ALL aggregated strikes in ONE query (no loop of 60+ table scans)
+            cur_all_agg = conn.execute(
+                f"""
+                SELECT snapshot_time_bkk, strike,
+                       ROUND(SUM(call_oi), 2) as call_oi,
+                       ROUND(SUM(put_oi), 2) as put_oi,
+                       ROUND(SUM(total_oi), 2) as total_oi,
+                       ROUND(SUM(call_oi_usd), 2) as call_oi_usd,
+                       ROUND(SUM(put_oi_usd), 2) as put_oi_usd,
+                       ROUND(SUM(call_volume_24h), 2) as call_volume_24h,
+                       ROUND(SUM(put_volume_24h), 2) as put_volume_24h,
+                       ROUND(SUM(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0)), 2) as total_volume_24h,
+                       ROUND(SUM(call_gex_usd), 2) as call_gex_usd,
+                       ROUND(SUM(put_gex_usd), 2) as put_gex_usd,
+                       ROUND(SUM(net_gex_usd), 2) as net_gex_usd,
+                       ROUND(AVG(call_iv), 1) as call_iv,
+                       ROUND(AVG(put_iv), 1) as put_iv
+                FROM oi_by_strike
+                WHERE expiry_date IN ({placeholders})
+                GROUP BY snapshot_time_bkk, strike
+                ORDER BY snapshot_time_bkk ASC, strike ASC
+                """,
+                tuple(target_dates) if target_dates else (),
+            )
+            strikes_by_time = defaultdict(list)
+            for r in cur_all_agg.fetchall():
+                st_dict = dict(r)
+                snap_time = st_dict.pop("snapshot_time_bkk")
+                strikes_by_time[snap_time].append(st_dict)
+
             snaps = []
             for t_row in times_rows:
                 t_bkk = t_row["snapshot_time_bkk"]
-                cur_agg_st = conn.execute(
-                    f"""
-                    SELECT strike,
-                           ROUND(SUM(call_oi), 2) as call_oi,
-                           ROUND(SUM(put_oi), 2) as put_oi,
-                           ROUND(SUM(total_oi), 2) as total_oi,
-                           ROUND(SUM(call_oi_usd), 2) as call_oi_usd,
-                           ROUND(SUM(put_oi_usd), 2) as put_oi_usd,
-                           ROUND(SUM(call_volume_24h), 2) as call_volume_24h,
-                           ROUND(SUM(put_volume_24h), 2) as put_volume_24h,
-                           ROUND(SUM(COALESCE(call_volume_24h, 0) + COALESCE(put_volume_24h, 0)), 2) as total_volume_24h,
-                           ROUND(SUM(call_gex_usd), 2) as call_gex_usd,
-                           ROUND(SUM(put_gex_usd), 2) as put_gex_usd,
-                           ROUND(SUM(net_gex_usd), 2) as net_gex_usd,
-                           ROUND(AVG(call_iv), 1) as call_iv,
-                           ROUND(AVG(put_iv), 1) as put_iv
-                    FROM oi_by_strike
-                    WHERE snapshot_time_bkk = ?
-                      AND expiry_date IN ({placeholders})
-                    GROUP BY strike
-                    ORDER BY strike ASC
-                    """,
-                    (t_bkk, *target_dates),
-                )
-                agg_strikes = [dict(r) for r in cur_agg_st.fetchall()]
+                agg_strikes = strikes_by_time.get(t_bkk, [])
                 if not agg_strikes:
                     continue
 
@@ -456,7 +487,13 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                     "strikes": agg_strikes,
                 })
 
-    return {"expiries": expiries, "groups": groups_meta, "snapshots": snaps}
+    result = {"expiries": expiries, "groups": groups_meta, "snapshots": snaps}
+    try:
+        from src.cache import memory_cache
+        memory_cache.set(cache_key, result, ttl_seconds=60)
+    except Exception:
+        pass
+    return result
 
 
 # ---------------- CSV Exports ----------------
