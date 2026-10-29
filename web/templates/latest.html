@@ -240,7 +240,18 @@
           </div>
         </div>
         <select id="expiryPicker" onchange="onExpiryChange(this.value)" class="w-full bg-[#16233b] border border-[#2a3c61] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 font-medium">
-          <!-- Injected via JS -->
+          <optgroup label="⚡ รวบข้อมูลเป็นกลุ่ม (Aggregated Groups)">
+            <option value="group_today" selected>⚡ วันนี้/พรุ่งนี้ (รวบ 2 วัน)</option>
+            <option value="group_weekly">📅 สัปดาห์นี้ (รวบถึงศุกร์นี้)</option>
+            <option value="group_monthly">🗓️ เดือนนี้ (รวบทั้งเดือน)</option>
+            <option value="all">🌐 รวมทุก Expiry ในอนาคต (All Aggregated)</option>
+          </optgroup>
+          {% if snap %}
+          <optgroup label="🎯 สัญญารายวัน/เดี่ยว (Single Expiries)">
+            <option value="{{ snap.expiry_date }}">{{ snap.expiry_date }} ({{ snap.expiry_type or 'เป้าหมายหลัก' }})</option>
+          </optgroup>
+          {% endif %}
+          <option value="__archive__">🗄️ ดูประวัติ Expiry ที่หมดอายุแล้วทั้งหมด (Archive) →</option>
         </select>
         <div class="flex items-center justify-between mt-1 text-[10px]">
           <span class="text-slate-400">เฉพาะสัญญาที่ยังไม่หมดอายุ</span>
@@ -778,6 +789,47 @@
   let activeGroups = {};
   let activeExpiriesList = [];
   let currentTargetKey = 'group_today';
+
+  // Server-rendered initial snapshot for INSTANT zero-delay chart rendering
+  {% if snap %}
+  const serverInitialSnap = {
+    snapshot_time_bkk: '{{ snap.snapshot_time_bkk }}',
+    label: '{{ snap.label }}',
+    expiry_date: '{{ snap.expiry_date }}',
+    expiry_type: '{{ snap.expiry_type or "" }}',
+    index_price: {{ snap.index_price or 0 }},
+    max_pain: {{ snap.max_pain or 0 }},
+    call1_strike: {{ snap.call1_strike or 0 }},
+    put1_strike: {{ snap.put1_strike or 0 }},
+    gamma_flip: {{ snap.gamma_flip if snap.gamma_flip is not none else 'null' }},
+    net_gex_usd: {{ snap.net_gex_usd or 0 }},
+    total_call_oi: {{ snap.total_call_oi or 0 }},
+    total_put_oi: {{ snap.total_put_oi or 0 }},
+    put_call_oi_ratio: {{ snap.put_call_oi_ratio or 0 }},
+    total_volume: {{ snap.total_volume or 0 }},
+    put_call_volume_ratio: {{ snap.put_call_volume_ratio or 0 }},
+    hours_to_expiry: {{ snap.hours_to_expiry or 0 }},
+    atm_iv: {{ snap.atm_iv if snap.atm_iv is not none else 'null' }},
+    strikes: [
+      {% for st in strikes %}
+      {
+        strike: {{ st.strike }},
+        call_oi: {{ st.call_oi or 0 }},
+        put_oi: {{ st.put_oi or 0 }},
+        call_volume_24h: {{ st.call_volume_24h or 0 }},
+        put_volume_24h: {{ st.put_volume_24h or 0 }},
+        call_gex_usd: {{ st.call_gex_usd or 0 }},
+        put_gex_usd: {{ st.put_gex_usd or 0 }},
+        net_gex_usd: {{ st.net_gex_usd or 0 }},
+        call_iv: {{ st.call_iv if st.call_iv is not none else 'null' }},
+        put_iv: {{ st.put_iv if st.put_iv is not none else 'null' }}
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  };
+  timelineData = [serverInitialSnap];
+  currentIndex = 0;
+  {% endif %}
 
   function updateExpiryPicker() {
     const picker = document.getElementById('expiryPicker');
@@ -1335,6 +1387,9 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initCharts();
+    if (timelineData && timelineData.length > 0) {
+      renderFrame(0);
+    }
     loadTimeline('group_today');
   });
 </script>
