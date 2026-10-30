@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from src.config import BKK_TZ, DB_PATH
 from src.db import get_db
 from src.deribit_client import DeribitClient
-from src.options_math import bs_price, classify_expiry
+from src.options_math import bs_gamma, bs_price, classify_expiry
 
 logger = logging.getLogger("paper_trade")
 
@@ -507,27 +507,79 @@ def open_active_paper_trades():
     inst_map = {x["instrument_name"]: x for x in insts}
     now_ms = int(now_bkk.timestamp() * 1000)
 
-    # Group by expiration_timestamp
+    # 2. Calculate Aggregated Market-wide OI and GEX per strike across ALL active expiries
     from collections import defaultdict
     by_exp = defaultdict(list)
+    agg_by_strike = defaultdict(lambda: {
+        "strike": 0.0,
+        "call_oi": 0.0, "put_oi": 0.0, "total_oi": 0.0,
+        "call_gex": 0.0, "put_gex": 0.0, "net_gex": 0.0
+    })
+
     for it in book_items:
         iname = it["instrument_name"]
         meta = inst_map.get(iname, {})
         exp_ms = meta.get("expiration_timestamp", 0)
-        if exp_ms > now_ms:
-            by_exp[exp_ms].append({
-                "name": iname,
-                "strike": meta.get("strike", 0.0),
-                "type": meta.get("option_type", ""),
-                "mark_btc": float(it.get("mark_price", 0.0) or 0.0),
-                "mark_usd": float(it.get("mark_price", 0.0) or 0.0) * spot,
-                "bid_btc": float(it.get("bid_price", 0.0) or 0.0),
-                "oi": float(it.get("open_interest", 0.0) or 0.0),
-            })
+        if exp_ms <= now_ms:
+            continue
+        k = float(meta.get("strike", 0.0))
+        otype = meta.get("option_type", "")
+        oi = float(it.get("open_interest", 0.0) or 0.0)
+        mark_iv = float(it.get("mark_iv", 0.0) or 0.0)
+
+        t_years = max((exp_ms - now_ms) / (1000.0 * 86400.0 * 365.0), 1e-5)
+        gamma = bs_gamma(spot, k, t_years, mark_iv / 100.0) if mark_iv > 0 else 0.0
+        gex_usd = gamma * spot * (spot * 0.01) * oi
+
+        entry = agg_by_strike[k]
+        entry["strike"] = k
+        entry["total_oi"] += oi
+        if otype == "call":
+            entry["call_oi"] += oi
+            entry["call_gex"] += gex_usd
+            entry["net_gex"] += gex_usd
+        elif otype == "put":
+            entry["put_oi"] += oi
+            entry["put_gex"] -= gex_usd
+            entry["net_gex"] -= gex_usd
+
+        by_exp[exp_ms].append({
+            "name": iname,
+            "strike": k,
+            "type": otype,
+            "mark_btc": float(it.get("mark_price", 0.0) or 0.0),
+            "mark_usd": float(it.get("mark_price", 0.0) or 0.0) * spot,
+            "bid_btc": float(it.get("bid_price", 0.0) or 0.0),
+            "mark_iv": mark_iv,
+            "oi": oi,
+        })
 
     sorted_exp_ms = sorted(by_exp.keys())
     if not sorted_exp_ms:
         return
+
+    # Determine Institutional Target Gamma Walls across the entire aggregated book:
+    strikes_list = sorted(agg_by_strike.values(), key=lambda x: x["strike"])
+
+    # Call Walls: K >= Spot, sorted by positive dealer gamma (+GEX) descending
+    otm_calls_by_gex = sorted([s for s in strikes_list if s["strike"] >= spot], key=lambda x: x["call_gex"], reverse=True)
+    target_c1 = otm_calls_by_gex[0]["strike"] if otm_calls_by_gex else spot * 1.02
+    c2_candidates = [s for s in otm_calls_by_gex if s["strike"] > target_c1]
+    target_c2 = c2_candidates[0]["strike"] if c2_candidates else (otm_calls_by_gex[1]["strike"] if len(otm_calls_by_gex) > 1 else target_c1 * 1.03)
+
+    # Put Walls: K <= Spot, sorted by negative dealer gamma (-GEX magnitude) ascending (most negative first)
+    otm_puts_by_gex = sorted([s for s in strikes_list if s["strike"] <= spot], key=lambda x: x["put_gex"])
+    target_p1 = otm_puts_by_gex[0]["strike"] if otm_puts_by_gex else spot * 0.98
+    p2_candidates = [s for s in otm_puts_by_gex if s["strike"] < target_p1]
+    target_p2 = p2_candidates[0]["strike"] if p2_candidates else (otm_puts_by_gex[1]["strike"] if len(otm_puts_by_gex) > 1 else target_p1 * 0.97)
+
+    logger.info(f"Institutional Aggregated Gamma Walls -> Call C1: ${target_c1:,.0f}, C2: ${target_c2:,.0f} | Put P1: ${target_p1:,.0f}, P2: ${target_p2:,.0f}")
+
+    def find_best_inst(items: List[Dict[str, Any]], opt_type: str, target_k: float) -> Optional[Dict[str, Any]]:
+        matching = [x for x in items if x["type"] == opt_type]
+        if not matching:
+            return None
+        return min(matching, key=lambda x: abs(x["strike"] - target_k))
 
     # Target Daily (closest future expiry)
     daily_ms = sorted_exp_ms[0]
@@ -554,37 +606,31 @@ def open_active_paper_trades():
         cur.execute("SELECT portfolio_id, trade_ref FROM paper_trades WHERE status = 'ACTIVE'")
         active_map = {r["portfolio_id"]: r["trade_ref"] for r in cur.fetchall()}
 
-        # Open for Port 1 & 2 (Daily)
+        # Open for Port 1 & 2 (Daily cycle matching Aggregated Gamma Walls)
         daily_items = by_exp[daily_ms]
-        d_calls = sorted([x for x in daily_items if x["type"] == "call"], key=lambda x: x["oi"], reverse=True)
-        d_puts = sorted([x for x in daily_items if x["type"] == "put"], key=lambda x: x["oi"], reverse=True)
+        c1 = find_best_inst(daily_items, "call", target_c1)
+        c2 = find_best_inst(daily_items, "call", target_c2) or c1
+        p1 = find_best_inst(daily_items, "put", target_p1)
+        p2 = find_best_inst(daily_items, "put", target_p2) or p1
 
-        if d_calls and d_puts:
-            c1 = d_calls[0]
-            c2 = d_calls[1] if len(d_calls) > 1 else d_calls[0]
-            p1 = d_puts[0]
-            p2 = d_puts[1] if len(d_puts) > 1 else d_puts[0]
-
+        if c1 and p1:
             if 1 not in active_map:
                 _create_active_trade(conn, 1, "daily", daily_date_str, daily_dt, spot, c1, p1)
-            if 2 not in active_map:
+            if 2 not in active_map and c2 and p2:
                 _create_active_trade(conn, 2, "daily", daily_date_str, daily_dt, spot, c2, p2)
 
-        # Open for Port 3 & 4 (Weekly)
+        # Open for Port 3 & 4 (Weekly cycle matching Aggregated Gamma Walls)
         if weekly_ms and weekly_ms in by_exp:
             weekly_items = by_exp[weekly_ms]
-            w_calls = sorted([x for x in weekly_items if x["type"] == "call"], key=lambda x: x["oi"], reverse=True)
-            w_puts = sorted([x for x in weekly_items if x["type"] == "put"], key=lambda x: x["oi"], reverse=True)
+            wc1 = find_best_inst(weekly_items, "call", target_c1)
+            wc2 = find_best_inst(weekly_items, "call", target_c2) or wc1
+            wp1 = find_best_inst(weekly_items, "put", target_p1)
+            wp2 = find_best_inst(weekly_items, "put", target_p2) or wp1
 
-            if w_calls and w_puts:
-                wc1 = w_calls[0]
-                wc2 = w_calls[1] if len(w_calls) > 1 else w_calls[0]
-                wp1 = w_puts[0]
-                wp2 = w_puts[1] if len(w_puts) > 1 else w_puts[0]
-
+            if wc1 and wp1:
                 if 3 not in active_map:
                     _create_active_trade(conn, 3, "weekly", weekly_date_str, weekly_dt, spot, wc1, wp1)
-                if 4 not in active_map:
+                if 4 not in active_map and wc2 and wp2:
                     _create_active_trade(conn, 4, "weekly", weekly_date_str, weekly_dt, spot, wc2, wp2)
 
         conn.commit()
