@@ -891,7 +891,11 @@
     picker.innerHTML = html;
 
     if (curVal) picker.value = curVal;
-    updateGroupingButtonState(curVal);
+    if (picker.selectedIndex === -1) {
+      picker.value = 'group_today';
+      currentTargetKey = 'group_today';
+    }
+    updateGroupingButtonState(picker.value);
   }
 
   function updateGroupingButtonState(val) {
@@ -946,81 +950,89 @@
   const verticalLinesPlugin = {
     id: 'verticalLines',
     afterDraw: (chart) => {
-      const snap = timelineData[currentIndex];
-      if (!snap) return;
+      try {
+        const snap = timelineData[currentIndex];
+        if (!snap) return;
 
-      const ctx = chart.ctx;
-      const xAxis = chart.scales.x;
-      const yAxis = chart.scales.y;
-      if (!xAxis || !yAxis) return;
+        const ctx = chart.ctx;
+        const xAxis = chart.scales.x;
+        const yAxis = chart.scales.y;
+        if (!xAxis || !yAxis) return;
 
-      const spot = snap.index_price;
-      const maxPain = snap.max_pain;
+        const spot = snap.index_price;
+        const maxPain = snap.max_pain;
 
-      function getXForValue(val) {
-        const labels = chart.data.labels;
-        if (!labels || labels.length === 0) return null;
+        function getXForValue(val) {
+          const labels = chart.data.labels;
+          if (!labels || labels.length === 0) return null;
 
-        // Exact match
-        const exactIdx = labels.findIndex(l => Math.abs(Number(l) - Number(val)) < 0.001);
-        if (exactIdx !== -1) {
-          return xAxis.getPixelForValue(exactIdx);
+          // Exact match
+          const exactIdx = labels.findIndex(l => Math.abs(Number(l) - Number(val)) < 0.001);
+          if (exactIdx !== -1) {
+            return xAxis.getPixelForValue(exactIdx);
+          }
+
+          // Interpolation between strikes
+          for (let i = 0; i < labels.length - 1; i++) {
+            const k1 = Number(labels[i]);
+            const k2 = Number(labels[i + 1]);
+            if (val >= k1 && val <= k2) {
+              const x1 = xAxis.getPixelForValue(i);
+              const x2 = xAxis.getPixelForValue(i + 1);
+              if (x1 === null || x2 === null || isNaN(x1) || isNaN(x2)) return null;
+              const ratio = (val - k1) / (k2 - k1);
+              return x1 + ratio * (x2 - x1);
+            }
+          }
+          if (val < Number(labels[0])) return xAxis.getPixelForValue(0);
+          if (val > Number(labels[labels.length - 1])) return xAxis.getPixelForValue(labels.length - 1);
+          return null;
         }
 
-        // Interpolation between strikes
-        for (let i = 0; i < labels.length - 1; i++) {
-          const k1 = Number(labels[i]);
-          const k2 = Number(labels[i + 1]);
-          if (val >= k1 && val <= k2) {
-            const x1 = xAxis.getPixelForValue(i);
-            const x2 = xAxis.getPixelForValue(i + 1);
-            if (x1 === null || x2 === null || isNaN(x1) || isNaN(x2)) return null;
-            const ratio = (val - k1) / (k2 - k1);
-            return x1 + ratio * (x2 - x1);
+        ctx.save();
+
+        // Spot Line (Red dashed line + Header Badge)
+        if (spot && spot > 0) {
+          const spotX = getXForValue(spot);
+          if (spotX !== null && !isNaN(spotX) && isFinite(spotX)) {
+            ctx.beginPath();
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.5;
+            ctx.moveTo(spotX, yAxis.top);
+            ctx.lineTo(spotX, yAxis.bottom);
+            ctx.stroke();
+
+            ctx.fillStyle = '#ef4444';
+            ctx.font = 'bold 10px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Current ${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`, spotX, yAxis.top - 4);
           }
         }
-        if (val < Number(labels[0])) return xAxis.getPixelForValue(0);
-        if (val > Number(labels[labels.length - 1])) return xAxis.getPixelForValue(labels.length - 1);
-        return null;
+
+        // Max Pain Line (Amber dashed line)
+        if (maxPain && maxPain > 0) {
+          const mpX = getXForValue(maxPain);
+          if (mpX !== null && !isNaN(mpX) && isFinite(mpX)) {
+            ctx.beginPath();
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 1.2;
+            ctx.moveTo(mpX, yAxis.top);
+            ctx.lineTo(mpX, yAxis.bottom);
+            ctx.stroke();
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 10px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Max Pain ${Number(maxPain).toLocaleString()}`, mpX, yAxis.top + 14);
+          }
+        }
+
+        ctx.restore();
+      } catch (err) {
+        console.error('Error drawing vertical lines plugin:', err);
       }
-
-      ctx.save();
-
-      // Spot Line (Red dashed line + Header Badge)
-      const spotX = getXForValue(spot);
-      if (spotX !== null) {
-        ctx.beginPath();
-        ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 1.5;
-        ctx.moveTo(spotX, yAxis.top);
-        ctx.lineTo(spotX, yAxis.bottom);
-        ctx.stroke();
-
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 10px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Current ${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`, spotX, yAxis.top - 4);
-      }
-
-      // Max Pain Line (Amber dashed line)
-      const mpX = getXForValue(maxPain);
-      if (mpX !== null) {
-        ctx.beginPath();
-        ctx.setLineDash([3, 3]);
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 1.2;
-        ctx.moveTo(mpX, yAxis.top);
-        ctx.lineTo(mpX, yAxis.bottom);
-        ctx.stroke();
-
-        ctx.fillStyle = '#f59e0b';
-        ctx.font = 'bold 10px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Max Pain ${Number(maxPain).toLocaleString()}`, mpX, yAxis.top + 14);
-      }
-
-      ctx.restore();
     }
   };
 
@@ -1214,93 +1226,126 @@
   function renderFrame(idx) {
     if (!timelineData || timelineData.length === 0 || idx < 0 || idx >= timelineData.length) return;
     const snap = timelineData[idx];
+    if (!snap) return;
 
-    // 1. Slider & Time Badge
-    document.getElementById('timelineSlider').value = idx;
-    document.getElementById('timeBadge').textContent = `${snap.snapshot_time_bkk} น. (GMT+7 Bangkok) • รอบ ${snap.label}`;
-    const subheader = document.getElementById('oiSubheader');
-    if (subheader) {
-      subheader.textContent = `Expiry: ${snap.expiry_date} (${snap.expiry_type || 'all'})`;
+    try {
+      // 1. Slider & Time Badge
+      const sliderEl = document.getElementById('timelineSlider');
+      if (sliderEl) sliderEl.value = idx;
+      const timeBadgeEl = document.getElementById('timeBadge');
+      if (timeBadgeEl) timeBadgeEl.textContent = `${snap.snapshot_time_bkk || ''} น. (GMT+7 Bangkok) • รอบ ${snap.label || ''}`;
+      const subheader = document.getElementById('oiSubheader');
+      if (subheader) {
+        subheader.textContent = `Expiry: ${snap.expiry_date} (${snap.expiry_type || 'all'})`;
+      }
+
+      // 2. Header Metrics
+      const headPutEl = document.getElementById('headPutOI');
+      if (headPutEl) headPutEl.textContent = Number(snap.total_put_oi || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+      const headCallEl = document.getElementById('headCallOI');
+      if (headCallEl) headCallEl.textContent = Number(snap.total_call_oi || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+      const headPCEl = document.getElementById('headPC');
+      if (headPCEl) headPCEl.textContent = snap.put_call_oi_ratio || '-';
+
+      const totVol = snap.total_volume || 0;
+      const pcVol = snap.put_call_volume_ratio || '-';
+      const volEl = document.getElementById('headTotalVol');
+      if (volEl) volEl.textContent = Number(totVol).toLocaleString(undefined, {maximumFractionDigits: 0});
+      const pcVolEl = document.getElementById('headPCVol');
+      if (pcVolEl) pcVolEl.textContent = pcVol;
+
+      const spot = snap.index_price || 0;
+      const headSpotEl = document.getElementById('headSpot');
+      if (headSpotEl) headSpotEl.textContent = `$${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`;
+
+      const mp = snap.max_pain || 0;
+      const headMPEl = document.getElementById('headMaxPain');
+      if (headMPEl) headMPEl.textContent = `$${Number(mp).toLocaleString()}`;
+
+      const headDTEEl = document.getElementById('headDTE');
+      if (headDTEEl) {
+        const dteHours = snap.hours_to_expiry !== undefined ? snap.hours_to_expiry : 0;
+        headDTEEl.textContent = `${(dteHours / 24.0).toFixed(2)}d`;
+      }
+
+      const headIVEl = document.getElementById('headIV');
+      if (headIVEl) headIVEl.textContent = snap.atm_iv ? `${snap.atm_iv}%` : '-';
+
+      const netGex = snap.net_gex_usd || 0;
+      const gexEl = document.getElementById('headGEX');
+      if (gexEl) {
+        gexEl.textContent = `$${Number(netGex / 1000000).toFixed(1)}M`;
+        gexEl.className = `font-bold ${netGex >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      }
+
+      // 3. Sub-bar Badges
+      const c1 = snap.call1_strike || 0;
+      const p1 = snap.put1_strike || 0;
+      const c1Pct = spot > 0 ? ((c1 - spot) / spot * 100).toFixed(2) : '0.00';
+      const p1Pct = spot > 0 ? ((p1 - spot) / spot * 100).toFixed(2) : '0.00';
+      const badgeC1El = document.getElementById('badgeC1');
+      if (badgeC1El) badgeC1El.textContent = `C1: $${Number(c1).toLocaleString()} (${c1Pct >= 0 ? '+' : ''}${c1Pct}%)`;
+      const badgeP1El = document.getElementById('badgeP1');
+      if (badgeP1El) badgeP1El.textContent = `P1: $${Number(p1).toLocaleString()} (${p1Pct >= 0 ? '+' : ''}${p1Pct}%)`;
+
+      const rangeWidth = p1 > 0 ? (((c1 - p1) / p1) * 100).toFixed(2) : '0.00';
+      const badgeRangeEl = document.getElementById('badgeRangeWidth');
+      if (badgeRangeEl) badgeRangeEl.textContent = `กรอบ P1–C1: ${rangeWidth}% ($${Number(p1).toLocaleString()} – $${Number(c1).toLocaleString()})`;
+
+      const flip = snap.gamma_flip;
+      const badgeFlipEl = document.getElementById('badgeFlip');
+      if (badgeFlipEl) badgeFlipEl.textContent = flip ? `Flip: $${Number(flip).toLocaleString()}` : 'Flip: N/A';
+
+      // 4. Update Both Charts with matching labels
+      const strikes = snap.strikes || [];
+      const labels = strikes.map(s => s.strike);
+
+      let callData, putData;
+      if (currentMetricView === 'volume') {
+        callData = strikes.map(s => s.call_volume_24h || 0);
+        putData = strikes.map(s => s.put_volume_24h || 0);
+        if (chartOI && chartOI.data && chartOI.data.datasets[0]) {
+          chartOI.data.datasets[0].label = 'Call Volume (BTC)';
+          chartOI.data.datasets[1].label = 'Put Volume (BTC)';
+        }
+      } else {
+        callData = strikes.map(s => s.call_oi || 0);
+        putData = strikes.map(s => s.put_oi || 0);
+        if (chartOI && chartOI.data && chartOI.data.datasets[0]) {
+          chartOI.data.datasets[0].label = 'Call OI (BTC)';
+          chartOI.data.datasets[1].label = 'Put OI (BTC)';
+        }
+      }
+
+      const ivCurve = strikes.map(s => {
+        const civ = s.call_iv;
+        const piv = s.put_iv;
+        if (civ && piv) return (civ + piv) / 2.0;
+        return civ || piv || null;
+      });
+
+      if (chartOI) {
+        chartOI.data.labels = labels;
+        chartOI.data.datasets[0].data = callData; // Green
+        chartOI.data.datasets[1].data = putData;  // Red
+        chartOI.data.datasets[2].data = ivCurve;
+        chartOI.update('none');
+      }
+
+      const callGEX = strikes.map(s => s.call_gex_usd || 0);
+      const putGEX = strikes.map(s => s.put_gex_usd || 0);
+      const netGEXArr = strikes.map(s => s.net_gex_usd || 0);
+
+      if (chartGEX) {
+        chartGEX.data.labels = labels;
+        chartGEX.data.datasets[0].data = netGEXArr;
+        chartGEX.data.datasets[1].data = callGEX;
+        chartGEX.data.datasets[2].data = putGEX;
+        chartGEX.update('none');
+      }
+    } catch (err) {
+      console.error('Error in renderFrame:', err);
     }
-
-    // 2. Header Metrics
-    document.getElementById('headPutOI').textContent = Number(snap.total_put_oi).toLocaleString(undefined, {maximumFractionDigits: 0});
-    document.getElementById('headCallOI').textContent = Number(snap.total_call_oi).toLocaleString(undefined, {maximumFractionDigits: 0});
-    document.getElementById('headPC').textContent = snap.put_call_oi_ratio;
-
-    const totVol = snap.total_volume || 0;
-    const pcVol = snap.put_call_volume_ratio || '-';
-    const volEl = document.getElementById('headTotalVol');
-    if (volEl) volEl.textContent = Number(totVol).toLocaleString(undefined, {maximumFractionDigits: 0});
-    const pcVolEl = document.getElementById('headPCVol');
-    if (pcVolEl) pcVolEl.textContent = pcVol;
-
-    const spot = snap.index_price;
-    document.getElementById('headSpot').textContent = `$${Number(spot).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}`;
-
-    const mp = snap.max_pain;
-    document.getElementById('headMaxPain').textContent = `$${Number(mp).toLocaleString()}`;
-    document.getElementById('headDTE').textContent = `${(snap.hours_to_expiry / 24.0).toFixed(2)}d`;
-    document.getElementById('headIV').textContent = snap.atm_iv ? `${snap.atm_iv}%` : '-';
-
-    const netGex = snap.net_gex_usd || 0;
-    const gexEl = document.getElementById('headGEX');
-    gexEl.textContent = `$${Number(netGex / 1000000).toFixed(1)}M`;
-    gexEl.className = `font-bold ${netGex >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
-
-    // 3. Sub-bar Badges
-    const c1 = snap.call1_strike;
-    const p1 = snap.put1_strike;
-    const c1Pct = ((c1 - spot) / spot * 100).toFixed(2);
-    const p1Pct = ((p1 - spot) / spot * 100).toFixed(2);
-    document.getElementById('badgeC1').textContent = `C1: $${Number(c1).toLocaleString()} (${c1Pct >= 0 ? '+' : ''}${c1Pct}%)`;
-    document.getElementById('badgeP1').textContent = `P1: $${Number(p1).toLocaleString()} (${p1Pct >= 0 ? '+' : ''}${p1Pct}%)`;
-
-    const rangeWidth = (((c1 - p1) / p1) * 100).toFixed(2);
-    document.getElementById('badgeRangeWidth').textContent = `กรอบ P1–C1: ${rangeWidth}% ($${Number(p1).toLocaleString()} – $${Number(c1).toLocaleString()})`;
-
-    const flip = snap.gamma_flip;
-    document.getElementById('badgeFlip').textContent = flip ? `Flip: $${Number(flip).toLocaleString()}` : 'Flip: N/A';
-
-    // 4. Update Both Charts with matching labels
-    const strikes = snap.strikes || [];
-    const labels = strikes.map(s => s.strike);
-
-    let callData, putData;
-    if (currentMetricView === 'volume') {
-      callData = strikes.map(s => s.call_volume_24h || 0);
-      putData = strikes.map(s => s.put_volume_24h || 0);
-      chartOI.data.datasets[0].label = 'Call Volume (BTC)';
-      chartOI.data.datasets[1].label = 'Put Volume (BTC)';
-    } else {
-      callData = strikes.map(s => s.call_oi || 0);
-      putData = strikes.map(s => s.put_oi || 0);
-      chartOI.data.datasets[0].label = 'Call OI (BTC)';
-      chartOI.data.datasets[1].label = 'Put OI (BTC)';
-    }
-
-    const ivCurve = strikes.map(s => {
-      const civ = s.call_iv;
-      const piv = s.put_iv;
-      if (civ && piv) return (civ + piv) / 2.0;
-      return civ || piv || null;
-    });
-
-    chartOI.data.labels = labels;
-    chartOI.data.datasets[0].data = callData; // Green
-    chartOI.data.datasets[1].data = putData;  // Red
-    chartOI.data.datasets[2].data = ivCurve;
-    chartOI.update('none');
-
-    const callGEX = strikes.map(s => s.call_gex_usd || 0);
-    const putGEX = strikes.map(s => s.put_gex_usd || 0);
-    const netGEXArr = strikes.map(s => s.net_gex_usd || 0);
-
-    chartGEX.data.labels = labels;
-    chartGEX.data.datasets[0].data = netGEXArr;
-    chartGEX.data.datasets[1].data = callGEX;
-    chartGEX.data.datasets[2].data = putGEX;
-    chartGEX.update('none');
   }
 
   function onSliderChange(val) {
