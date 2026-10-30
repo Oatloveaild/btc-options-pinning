@@ -248,6 +248,11 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
             # If all upcoming are somehow empty, fallback to last 3 expiries
             if not expiries and all_exp:
                 expiries = all_exp[-3:]
+            # If a specific single expiry was requested, ensure it's in expiries so picker has it
+            if expiry_date and not (expiry_date.startswith("group_") or expiry_date in ("all", "all_expiries")):
+                match_exp = [e for e in all_exp if e["expiry_date"] == expiry_date]
+                if match_exp and match_exp[0] not in expiries:
+                    expiries = match_exp + expiries
         elif scope == "expired":
             expiries = [e for e in all_exp if not is_expiry_active(e["expiry_date"])]
         else:
@@ -463,6 +468,16 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                 p1_strike = max(agg_strikes, key=lambda x: x["put_oi"])["strike"] if agg_strikes else 0
                 mp = calculate_max_pain(agg_strikes)
 
+                # Calculate hours to earliest expiry in target_dates
+                h_to_exp = 0.0
+                if target_dates:
+                    try:
+                        earliest_d = min(datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=tz_bkk) + timedelta(hours=15) for d in target_dates)
+                        cur_t = datetime.strptime(t_bkk, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_bkk)
+                        h_to_exp = round(max((earliest_d - cur_t).total_seconds() / 3600.0, 0.0), 1)
+                    except Exception:
+                        h_to_exp = 0.0
+
                 snaps.append({
                     "snapshot_time_bkk": t_bkk,
                     "label": t_row["label"] or "group",
@@ -481,7 +496,7 @@ def api_timeline(expiry_date: Optional[str] = None, scope: str = "active"):
                     "call1_strike": c1_strike,
                     "put1_strike": p1_strike,
                     "max_pain": mp,
-                    "hours_to_expiry": 0.0,
+                    "hours_to_expiry": h_to_exp,
                     "atm_iv": t_row["atm_iv"],
                     "dvol": t_row["dvol"],
                     "strikes": agg_strikes,
