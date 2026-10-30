@@ -27,28 +27,28 @@ PORTFOLIO_CONFIGS = [
         "name": "พอร์ต 1: Daily C1/P1",
         "cycle_type": "daily",
         "target_strikes": "c1_p1",
-        "desc": "ขาย Call 1 และ Put 1 กรอบวัน ใกล้ราคา Spot (เน้นพรีเมียมสูงสุด)",
+        "desc": "ขาย Call Wall (+GEX) และ Put Wall (-GEX) ประจำวัน (ยึดยอด Gamma ของวันนั้น)",
     },
     {
         "id": 2,
         "name": "พอร์ต 2: Daily C2/P2",
         "cycle_type": "daily",
         "target_strikes": "c2_p2",
-        "desc": "ขาย Call 2 และ Put 2 กรอบวัน OTM ไกลขึ้น (เน้น Win Rate สูง)",
+        "desc": "ขาย Call Wall #2 และ Put Wall #2 ประจำวัน OTM กว้างขึ้น (ยึดยอด Gamma ของวันนั้น)",
     },
     {
         "id": 3,
         "name": "พอร์ต 3: Weekly C1/P1",
         "cycle_type": "weekly",
         "target_strikes": "c1_p1",
-        "desc": "ขาย Call 1 และ Put 1 กรอบสัปดาห์ (Sweet spot สถาบัน ค่าธรรมเนียมต่ำ)",
+        "desc": "ขาย Call Wall (+GEX) และ Put Wall (-GEX) ประจำสัปดาห์ (ยึดยอด Gamma ของสัปดาห์นั้น)",
     },
     {
         "id": 4,
         "name": "พอร์ต 4: Weekly C2/P2",
         "cycle_type": "weekly",
         "target_strikes": "c2_p2",
-        "desc": "ขาย Call 2 และ Put 2 กรอบสัปดาห์ OTM ลึก (ปลอดภัยสูงสุด)",
+        "desc": "ขาย Call Wall #2 และ Put Wall #2 ประจำสัปดาห์ OTM กว้างขึ้น (ยึดยอด Gamma ของสัปดาห์นั้น)",
     },
 ]
 
@@ -507,14 +507,10 @@ def open_active_paper_trades():
     inst_map = {x["instrument_name"]: x for x in insts}
     now_ms = int(now_bkk.timestamp() * 1000)
 
-    # 2. Calculate Aggregated Market-wide OI and GEX per strike across ALL active expiries
+    # 2. Collect instruments by expiry, calculate GEX for each contract, and aggregate market total OI
     from collections import defaultdict
     by_exp = defaultdict(list)
-    agg_by_strike = defaultdict(lambda: {
-        "strike": 0.0,
-        "call_oi": 0.0, "put_oi": 0.0, "total_oi": 0.0,
-        "call_gex": 0.0, "put_gex": 0.0, "net_gex": 0.0
-    })
+    agg_oi = defaultdict(float)
 
     for it in book_items:
         iname = it["instrument_name"]
@@ -527,21 +523,11 @@ def open_active_paper_trades():
         oi = float(it.get("open_interest", 0.0) or 0.0)
         mark_iv = float(it.get("mark_iv", 0.0) or 0.0)
 
+        agg_oi[k] += oi
+
         t_years = max((exp_ms - now_ms) / (1000.0 * 86400.0 * 365.0), 1e-5)
         gamma = bs_gamma(spot, k, t_years, mark_iv / 100.0) if mark_iv > 0 else 0.0
         gex_usd = gamma * spot * (spot * 0.01) * oi
-
-        entry = agg_by_strike[k]
-        entry["strike"] = k
-        entry["total_oi"] += oi
-        if otype == "call":
-            entry["call_oi"] += oi
-            entry["call_gex"] += gex_usd
-            entry["net_gex"] += gex_usd
-        elif otype == "put":
-            entry["put_oi"] += oi
-            entry["put_gex"] -= gex_usd
-            entry["net_gex"] -= gex_usd
 
         by_exp[exp_ms].append({
             "name": iname,
@@ -551,35 +537,14 @@ def open_active_paper_trades():
             "mark_usd": float(it.get("mark_price", 0.0) or 0.0) * spot,
             "bid_btc": float(it.get("bid_price", 0.0) or 0.0),
             "mark_iv": mark_iv,
+            "call_gex": gex_usd if otype == "call" else 0.0,
+            "put_gex": -gex_usd if otype == "put" else 0.0,
             "oi": oi,
         })
 
     sorted_exp_ms = sorted(by_exp.keys())
     if not sorted_exp_ms:
         return
-
-    # Determine Institutional Target Gamma Walls across the entire aggregated book:
-    strikes_list = sorted(agg_by_strike.values(), key=lambda x: x["strike"])
-
-    # Call Walls: K >= Spot, sorted by positive dealer gamma (+GEX) descending
-    otm_calls_by_gex = sorted([s for s in strikes_list if s["strike"] >= spot], key=lambda x: x["call_gex"], reverse=True)
-    target_c1 = otm_calls_by_gex[0]["strike"] if otm_calls_by_gex else spot * 1.02
-    c2_candidates = [s for s in otm_calls_by_gex if s["strike"] > target_c1]
-    target_c2 = c2_candidates[0]["strike"] if c2_candidates else (otm_calls_by_gex[1]["strike"] if len(otm_calls_by_gex) > 1 else target_c1 * 1.03)
-
-    # Put Walls: K <= Spot, sorted by negative dealer gamma (-GEX magnitude) ascending (most negative first)
-    otm_puts_by_gex = sorted([s for s in strikes_list if s["strike"] <= spot], key=lambda x: x["put_gex"])
-    target_p1 = otm_puts_by_gex[0]["strike"] if otm_puts_by_gex else spot * 0.98
-    p2_candidates = [s for s in otm_puts_by_gex if s["strike"] < target_p1]
-    target_p2 = p2_candidates[0]["strike"] if p2_candidates else (otm_puts_by_gex[1]["strike"] if len(otm_puts_by_gex) > 1 else target_p1 * 0.97)
-
-    logger.info(f"Institutional Aggregated Gamma Walls -> Call C1: ${target_c1:,.0f}, C2: ${target_c2:,.0f} | Put P1: ${target_p1:,.0f}, P2: ${target_p2:,.0f}")
-
-    def find_best_inst(items: List[Dict[str, Any]], opt_type: str, target_k: float) -> Optional[Dict[str, Any]]:
-        matching = [x for x in items if x["type"] == opt_type]
-        if not matching:
-            return None
-        return min(matching, key=lambda x: abs(x["strike"] - target_k))
 
     # Target Daily (closest future expiry)
     daily_ms = sorted_exp_ms[0]
@@ -606,28 +571,62 @@ def open_active_paper_trades():
         cur.execute("SELECT portfolio_id, trade_ref FROM paper_trades WHERE status = 'ACTIVE'")
         active_map = {r["portfolio_id"]: r["trade_ref"] for r in cur.fetchall()}
 
-        # Open for Port 1 & 2 (Daily cycle matching Aggregated Gamma Walls)
+        # -------------------------------------------------------------
+        # Open for Port 1 & 2: DAILY CYCLE (ใช้ GEX ของวันนั้นเดี่ยวๆ)
+        # -------------------------------------------------------------
         daily_items = by_exp[daily_ms]
-        c1 = find_best_inst(daily_items, "call", target_c1)
-        c2 = find_best_inst(daily_items, "call", target_c2) or c1
-        p1 = find_best_inst(daily_items, "put", target_p1)
-        p2 = find_best_inst(daily_items, "put", target_p2) or p1
+        d_otm_calls = [x for x in daily_items if x["type"] == "call" and x["strike"] >= spot]
+        d_otm_puts = [x for x in daily_items if x["type"] == "put" and x["strike"] <= spot]
+
+        # Call Wall: Positive Gamma (+GEX สูงสุดของวันนั้น)
+        d_calls_by_gex = sorted(d_otm_calls, key=lambda x: x["call_gex"], reverse=True)
+        c1 = d_calls_by_gex[0] if d_calls_by_gex else None
+        c2_candidates = [x for x in d_calls_by_gex if x["strike"] > (c1["strike"] if c1 else 0)]
+        c2 = c2_candidates[0] if c2_candidates else (d_calls_by_gex[1] if len(d_calls_by_gex) > 1 else c1)
+
+        # Put Wall: Negative Gamma (-GEX magnitude สูงสุดของวันนั้น, most negative first)
+        d_puts_by_gex = sorted(d_otm_puts, key=lambda x: x["put_gex"])
+        p1 = d_puts_by_gex[0] if d_puts_by_gex else None
+        p2_candidates = [x for x in d_puts_by_gex if x["strike"] < (p1["strike"] if p1 else 0)]
+        p2 = p2_candidates[0] if p2_candidates else (d_puts_by_gex[1] if len(d_puts_by_gex) > 1 else p1)
 
         if c1 and p1:
+            logger.info(
+                f"[Daily {daily_date_str}] GEX วันนั้น -> "
+                f"C1: ${c1['strike']:,.0f} (+${c1['call_gex']/1e6:,.2f}M) | P1: ${p1['strike']:,.0f} (-${abs(p1['put_gex'])/1e6:,.2f}M) | "
+                f"C2: ${c2['strike']:,.0f} | P2: ${p2['strike']:,.0f}"
+            )
             if 1 not in active_map:
                 _create_active_trade(conn, 1, "daily", daily_date_str, daily_dt, spot, c1, p1)
             if 2 not in active_map and c2 and p2:
                 _create_active_trade(conn, 2, "daily", daily_date_str, daily_dt, spot, c2, p2)
 
-        # Open for Port 3 & 4 (Weekly cycle matching Aggregated Gamma Walls)
+        # -------------------------------------------------------------
+        # Open for Port 3 & 4: WEEKLY CYCLE (ใช้ GEX ของสัปดาห์นั้นเดี่ยวๆ)
+        # -------------------------------------------------------------
         if weekly_ms and weekly_ms in by_exp:
             weekly_items = by_exp[weekly_ms]
-            wc1 = find_best_inst(weekly_items, "call", target_c1)
-            wc2 = find_best_inst(weekly_items, "call", target_c2) or wc1
-            wp1 = find_best_inst(weekly_items, "put", target_p1)
-            wp2 = find_best_inst(weekly_items, "put", target_p2) or wp1
+            w_otm_calls = [x for x in weekly_items if x["type"] == "call" and x["strike"] >= spot]
+            w_otm_puts = [x for x in weekly_items if x["type"] == "put" and x["strike"] <= spot]
+
+            # Call Wall: Positive Gamma (+GEX สูงสุดของสัปดาห์นั้น)
+            w_calls_by_gex = sorted(w_otm_calls, key=lambda x: x["call_gex"], reverse=True)
+            wc1 = w_calls_by_gex[0] if w_calls_by_gex else None
+            wc2_candidates = [x for x in w_calls_by_gex if x["strike"] > (wc1["strike"] if wc1 else 0)]
+            wc2 = wc2_candidates[0] if wc2_candidates else (w_calls_by_gex[1] if len(w_calls_by_gex) > 1 else wc1)
+
+            # Put Wall: Negative Gamma (-GEX magnitude สูงสุดของสัปดาห์นั้น, most negative first)
+            w_puts_by_gex = sorted(w_otm_puts, key=lambda x: x["put_gex"])
+            wp1 = w_puts_by_gex[0] if w_puts_by_gex else None
+            wp2_candidates = [x for x in w_puts_by_gex if x["strike"] < (wp1["strike"] if wp1 else 0)]
+            wp2 = wp2_candidates[0] if wp2_candidates else (w_puts_by_gex[1] if len(w_puts_by_gex) > 1 else wp1)
 
             if wc1 and wp1:
+                logger.info(
+                    f"[Weekly {weekly_date_str}] GEX สัปดาห์นั้น -> "
+                    f"C1: ${wc1['strike']:,.0f} (+${wc1['call_gex']/1e6:,.2f}M) | P1: ${wp1['strike']:,.0f} (-${abs(wp1['put_gex'])/1e6:,.2f}M) | "
+                    f"C2: ${wc2['strike']:,.0f} | P2: ${wp2['strike']:,.0f}"
+                )
                 if 3 not in active_map:
                     _create_active_trade(conn, 3, "weekly", weekly_date_str, weekly_dt, spot, wc1, wp1)
                 if 4 not in active_map and wc2 and wp2:
